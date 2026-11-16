@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grille d'impro</title>
+  <meta name="description" content="Compose une grille d'accords, vois pour chaque accord les notes et les gammes à jouer, transposées pour ton instrument (Sib, Mib, Fa, clé de fa), et écoute-la.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <h1>Grille d'impro</h1>
+    <p>Écris une grille d'accords. Pour chaque accord, vois les notes et les gammes à jouer, <strong>écrites pour ton instrument</strong>. Écoute, puis improvise dessus.</p>
+  </header>
+
+  <main>
+    <section class="panel" aria-labelledby="h-setup">
+      <h2 id="h-setup">1. Ton instrument et ta grille</h2>
+      <div class="controls">
+        <label class="field wide">
+          <span>Mon instrument (comment c'est écrit sur ma partition)</span>
+          <select id="inst"></select>
+        </label>
+        <label class="field">
+          <span>Noms des notes</span>
+          <select id="names">
+            <option value="fr">Do Ré Mi</option>
+            <option value="en">C D E</option>
+          </select>
+        </label>
+      </div>
+      <div class="controls">
+        <label class="field">
+          <span>Grille type</span>
+          <select id="preset"></select>
+        </label>
+        <label class="field narrow">
+          <span>Tonalité (réelle)</span>
+          <select id="key"></select>
+        </label>
+        <button type="button" id="apply-preset" class="secondary">Charger la grille</button>
+      </div>
+      <p id="preset-info" class="hint"></p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-grid">
+      <h2 id="h-grid">2. La grille <small>(<span id="bar-count">12</span> mesures)</small></h2>
+      <p class="hint">Un ou deux accords par mesure, séparés par un espace&nbsp;: <code>Dm7 G7</code>. Un <code>%</code> répète l'accord précédent. Types reconnus&nbsp;: <code>C</code> <code>Cm</code> <code>C7</code> <code>Cmaj7</code> <code>Cm7</code> <code>Cm7b5</code> <code>Cdim7</code> <code>C7b9</code> <code>C6</code> <code>Cm6</code>. Les accords que tu tapes sont en <strong>sons réels</strong> (concert) ; sous chaque mesure tu lis l'accord <strong>tel qu'il s'écrit pour toi</strong> et la gamme conseillée.</p>
+      <div id="grid" class="grid"></div>
+      <div class="transport">
+        <button type="button" id="play" aria-pressed="false">▶ Jouer la grille</button>
+        <label class="inline">Tempo <input type="range" id="tempo" min="40" max="220" step="2"> <output id="tempo-out"></output></label>
+        <label class="inline"><input type="checkbox" id="loop"> En boucle</label>
+        <label class="inline"><input type="checkbox" id="click"> Métronome</label>
+      </div>
+      <div class="transport tools">
+        <button type="button" id="add-bars" class="secondary">+ 4 mesures</button>
+        <button type="button" id="remove-bars" class="secondary">− 4 mesures</button>
+        <button type="button" id="clear" class="secondary">Vider</button>
+        <button type="button" id="share" class="secondary">🔗 Copier le lien</button>
+        <button type="button" id="print" class="secondary">🖨 Imprimer</button>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-detail">
+      <h2 id="h-detail">3. Un accord en détail</h2>
+      <div id="detail" aria-live="polite"></div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      Ce que tu entends est en <strong>sons réels</strong> ; ce que tu lis est transposé pour ton instrument.
+      Les gammes proposées sont un point de départ, pas une règle.
+    </p>
+    <p>
+      <a href="https://justinsillou.github.io/blog/improvisation-grilles-transposition">L'article qui explique tout</a> ·
+      <a href="https://github.com/justinsillou/impro">Code source</a> ·
+      Aucun cookie, aucun traceur : ta grille reste dans ton navigateur et dans le lien que tu copies.
+    </p>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
