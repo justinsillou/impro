@@ -115,7 +115,64 @@ export function parseMscx(xmlText) {
     bars.push(chords.slice(0, MAX_PER_BAR).join(" "));
     if (bars.length >= MAX_BARS) break;
   }
-  return { bars: trimBars(bars), skipped };
+  return { bars: trimBars(bars), skipped, parts: mscxParts(doc) };
+}
+
+/** Durée MuseScore d'un <Chord> ou <Rest>, en noires. */
+const DUR = { long: 16, breve: 8, whole: 4, half: 2, quarter: 1, eighth: 0.5, "16th": 0.25, "32nd": 0.125, "64th": 0.0625, "128th": 0.03125 };
+function mscxDur(el) {
+  const type = txt(el, "durationType");
+  if (type === "measure") {
+    const [a, b] = txt(el, "duration").split("/").map(Number);
+    return a && b ? (4 * a) / b : 4;
+  }
+  const dots = Number(txt(el, "dots") || 0);
+  return (DUR[type] ?? 1) * (2 - 0.5 ** dots);
+}
+
+/** Notes de chaque portée (son réel). Une partie = une portée. */
+function mscxParts(doc) {
+  const names = new Map(); // id de portée -> nom
+  for (const part of doc.querySelectorAll("Part")) {
+    const name = txt(part, "trackName") || txt(kids(part, "Instrument")[0] ?? part, "longName") || txt(kids(part, "Instrument")[0] ?? part, "trackName");
+    const ids = kids(part, "Staff").map((x) => x.getAttribute("id"));
+    ids.forEach((id, i) => names.set(id, ids.length > 1 ? `${name || "Partie"} (portée ${i + 1})` : name));
+  }
+  const parts = [];
+  for (const staff of doc.querySelectorAll("Staff")) {
+    const measures = kids(staff, "Measure");
+    if (!measures.length) continue;
+    const notes = [];
+    measures.slice(0, MAX_BARS).forEach((meas, bar) => {
+      for (const voice of kids(meas, "voice")) {
+        let cur = 0;
+        let ratio = 1;
+        for (const el of voice.children) {
+          const tag = el.tagName;
+          if (tag === "Tuplet") {
+            const n = Number(txt(el, "normalNotes")), a = Number(txt(el, "actualNotes"));
+            ratio = n && a ? n / a : 1;
+          } else if (tag === "endTuplet") ratio = 1;
+          else if (tag === "location") {
+            const [a, b] = txt(el, "fractions").split("/").map(Number);
+            if (a && b) cur += (4 * a) / b;
+          } else if (tag === "Rest") cur += mscxDur(el) * ratio;
+          else if (tag === "Chord") {
+            const grace = [...el.children].some((c) => /^(acciaccatura|appoggiatura|grace)/.test(c.tagName));
+            const d = mscxDur(el) * ratio;
+            if (!grace) {
+              const ns = kids(el, "Note").filter((nt) => !nt.querySelector('Spanner[type="Tie"] > prev'));
+              const top = Math.max(...ns.map((nt) => Number(txt(nt, "pitch"))).filter(Number.isFinite), -1);
+              if (top >= 0) notes.push({ m: top, t: bar * 4 + cur, d });
+              cur += d;
+            }
+          }
+        }
+      }
+    });
+    if (notes.length) parts.push({ name: names.get(staff.getAttribute("id")) || `Portée ${staff.getAttribute("id")}`, notes });
+  }
+  return parts;
 }
 
 /* ------------------------------------------------------------ MusicXML */
@@ -162,7 +219,55 @@ export function parseMusicXml(xmlText) {
       if (bars.length >= MAX_BARS) break;
     }
   }
-  return { bars: trimBars(bars), skipped };
+  return { bars: trimBars(bars), skipped, parts: xmlParts(doc) };
+}
+
+const STEP_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+/** Notes de chaque <part> MusicXML, en sons réels (tient compte de <transpose>). */
+function xmlParts(doc) {
+  const names = {};
+  for (const sp of doc.querySelectorAll("score-part")) names[sp.getAttribute("id")] = txt(sp, "part-name") || txt(sp, "part-abbreviation");
+  const parts = [];
+  for (const part of doc.querySelectorAll("part")) {
+    let div = 1;
+    let shift = 0;
+    const notes = [];
+    kids(part, "measure").slice(0, MAX_BARS).forEach((meas, bar) => {
+      for (const at of kids(meas, "attributes")) {
+        if (txt(at, "divisions")) div = Number(txt(at, "divisions")) || 1;
+        const tr = kids(at, "transpose")[0];
+        if (tr) shift = Number(txt(tr, "chromatic") || 0) + 12 * Number(txt(tr, "octave-change") || 0);
+      }
+      let cur = 0;
+      let lastStart = 0;
+      for (const el of meas.children) {
+        if (el.tagName === "backup") cur -= Number(txt(el, "duration") || 0);
+        else if (el.tagName === "forward") cur += Number(txt(el, "duration") || 0);
+        else if (el.tagName === "note") {
+          if (kids(el, "grace")[0]) continue;
+          const dur = Number(txt(el, "duration") || 0);
+          const chord = !!kids(el, "chord")[0];
+          const start = chord ? lastStart : cur;
+          if (!chord) {
+            lastStart = cur;
+            cur += dur;
+          }
+          const pitch = kids(el, "pitch")[0];
+          if (!pitch || kids(el, "rest")[0]) continue;
+          const tie = kids(el, "tie").some((x) => x.getAttribute("type") === "stop");
+          if (tie) continue; // suite d'une note liée
+          const m = 12 * (Number(txt(pitch, "octave")) + 1) + (STEP_PC[txt(pitch, "step")] ?? 0) + Number(txt(pitch, "alter") || 0) + shift;
+          const t = bar * 4 + start / div;
+          const prev = notes[notes.length - 1];
+          if (chord && prev && Math.abs(prev.t - t) < 1e-6) prev.m = Math.max(prev.m, m);
+          else notes.push({ m, t, d: dur / div });
+        }
+      }
+    });
+    if (notes.length) parts.push({ name: names[part.getAttribute("id")] || part.getAttribute("id"), notes });
+  }
+  return parts;
 }
 
 /** Retire les mesures vides de la fin (reprises, pages blanches). */
@@ -242,8 +347,14 @@ export async function importFile(file) {
   } else {
     result = parseChordText(await file.text());
   }
+  const parts = result.parts ?? [];
+  if (!result.bars.length && parts.length) {
+    // pas de symboles d'accords : on garde des mesures vides, l'analyse des notes reste utile
+    const n = Math.min(MAX_BARS, Math.max(...parts.map((p) => Math.floor(Math.max(...p.notes.map((x) => x.t)) / 4) + 1)));
+    result = { ...result, bars: new Array(Math.max(4, n)).fill("") };
+  }
   if (!result.bars.length) {
-    throw new Error("Aucun accord trouvé. Il faut des chiffrages d'accords (« symboles d'accords ») dans la partition.");
+    throw new Error("Rien d'exploitable : ni symboles d'accords, ni notes dans ce fichier.");
   }
   return { ...result, title };
 }

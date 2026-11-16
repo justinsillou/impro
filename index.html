@@ -59,9 +59,10 @@
       <p id="song-status" class="hint" aria-live="polite"></p>
       <details class="explain">
         <summary>Quels fichiers puis-je importer ?</summary>
-        <p><strong>MuseScore</strong> (<code>.mscz</code>, <code>.mscx</code>), <strong>MusicXML</strong> (<code>.musicxml</code>, <code>.xml</code>, <code>.mxl</code>) ou un <strong>fichier texte</strong> d'accords. Seuls les <em>chiffrages d'accords</em> de la partition sont lus (pas les notes) : une partition sans symboles d'accords ne donnera rien. Dans MuseScore, ajoute-les avec <kbd>Ctrl</kbd>+<kbd>K</kbd>. Mesures en 4/4, 4 accords par mesure, 64 mesures au maximum. Le fichier est lu dans ton navigateur et n'est jamais envoyé.</p>
+        <p><strong>MuseScore</strong> (<code>.mscz</code>, <code>.mscx</code>), <strong>MusicXML</strong> (<code>.musicxml</code>, <code>.xml</code>, <code>.mxl</code>) ou un <strong>fichier texte</strong> d'accords. Les <em>symboles d'accords</em> remplissent la grille, et les <em>notes de chaque instrument</em> sont analysées (tessiture, mouvement, rythme, activité) pour orienter les phrases proposées. Sans symboles d'accords, la grille reste vide : tape les accords toi-même, l'analyse des notes marche quand même. Dans MuseScore, ajoute-les avec <kbd>Ctrl</kbd>+<kbd>K</kbd>. Mesures en 4/4, 4 accords par mesure, 64 mesures au maximum. Le fichier est lu dans ton navigateur et n'est jamais envoyé.</p>
         <p>Tes morceaux sont gardés dans ce navigateur uniquement (menu « Grille type » → « Mes morceaux »).</p>
       </details>
+      <div id="score-panel" class="score-panel" hidden></div>
     </section>
 
     <section class="panel" aria-labelledby="h-grid">

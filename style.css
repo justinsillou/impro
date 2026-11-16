@@ -185,3 +185,10 @@ output { min-width: 2.2em; font-variant-numeric: tabular-nums; }
 .hint.error { color: #b3261e; font-weight: 600; }
 @media (prefers-color-scheme: dark) { .hint.error { color: #ff8a80; } }
 kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 .3em; font-size: .85em; }
+
+.score-panel { margin-top: 16px; border-top: 1px dashed var(--line); padding-top: 12px; }
+.table-wrap { overflow-x: auto; margin: 8px 0; }
+.score-table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+.score-table th, .score-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.spark { display: block; width: 140px; height: 24px; fill: var(--accent); }
+@media print { .score-panel { display: none !important; } }

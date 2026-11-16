@@ -9,6 +9,7 @@ import { MidiIn } from "./midi.js";
 import { download, midiFile, musicXml } from "./export.js";
 import { initTestUi } from "./test-ui.js";
 import { importFile, parseChordText } from "./import.js";
+import { analyseParts, notesIn, rhythmFromNotes, scaleCoverage, styleFromAnalysis } from "./analysis.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) =>
@@ -30,11 +31,27 @@ function loadSongs() {
     const raw = JSON.parse(localStorage.getItem(SONGS_KEY) ?? "[]");
     return (Array.isArray(raw) ? raw : [])
       .filter((x) => x && typeof x.id === "string" && typeof x.name === "string" && Array.isArray(x.bars))
-      .map((x) => ({ id: x.id, name: x.name.slice(0, 80), bars: x.bars.slice(0, 64).map((b) => String(b).slice(0, 40)) }))
+      .map((x) => ({ id: x.id, name: x.name.slice(0, 80), bars: x.bars.slice(0, 64).map((b) => String(b).slice(0, 40)), parts: cleanParts(x.parts) }))
       .filter((x) => x.bars.length);
   } catch {
     return [];
   }
+}
+/** Parties d'une partition (stockage) : ne garde que des nombres valides. */
+function cleanParts(raw) {
+  if (!Array.isArray(raw)) return undefined;
+  const parts = raw
+    .filter((p) => p && typeof p.name === "string" && Array.isArray(p.notes))
+    .slice(0, 24)
+    .map((p) => ({
+      name: p.name.slice(0, 60),
+      notes: p.notes
+        .filter((n) => n && [n.m, n.t, n.d].every(Number.isFinite))
+        .slice(0, 6000)
+        .map((n) => ({ m: n.m, t: Math.round(n.t * 1000) / 1000, d: Math.round(n.d * 1000) / 1000 })),
+    }))
+    .filter((p) => p.notes.length);
+  return parts.length ? parts : undefined;
 }
 let songs = loadSongs();
 const saveSongs = () => {
@@ -112,6 +129,7 @@ let scalePick = 0;
 let phrase = null; // { events, scaleId }
 let saveTimer = null;
 let currentItem = null; // accord en cours pendant la lecture
+let score = null; // partition importée : { title, parts, analysis, model, adapt, echo }
 
 function save() {
   clearTimeout(saveTimer);
@@ -221,9 +239,88 @@ function renderGrid() {
 
 function select(bar, idx) {
   sel = { bar, idx };
-  scalePick = 0;
+  const it = score ? selectedItem() : null;
+  scalePick = it ? bestScale(it) : 0;
   phrase = null;
   updateDerived();
+}
+
+/* ------------------------------------------------------- partition importée */
+
+/** Fenêtre (en temps depuis le début) occupée par un accord de la grille. */
+function chordWindow(bar, idx, resolved = resolveGrid()) {
+  const items = resolved[bar] ?? [];
+  const from = bar * 4 + items.slice(0, idx).reduce((s, it) => s + it.beats, 0);
+  return [from, from + (items[idx]?.beats ?? 4)];
+}
+
+const modelPart = () => (score ? score.parts.find((p) => p.name === score.analysis[score.model]?.name) : null);
+
+/** Notes jouées par la partition sur un accord (partie modèle, sinon toutes). */
+function scoreNotes(bar, idx) {
+  if (!score) return [];
+  const [a, b] = chordWindow(bar, idx);
+  const own = modelPart() ? notesIn(modelPart(), a, b) : [];
+  return own.length ? own : score.parts.flatMap((p) => notesIn(p, a, b));
+}
+
+/** Gamme de l'accord qui couvre le mieux la mélodie de la partition. */
+function bestScale(item) {
+  const notes = scoreNotes(sel.bar, sel.idx);
+  if (!notes.length) return 0;
+  let best = 0;
+  let bestCov = -1;
+  item.a.scales.forEach((sc, i) => {
+    const c = scaleCoverage(item.a.parsed.pc, sc.degrees, notes) ?? 0;
+    if (c > bestCov + 1e-9) {
+      best = i;
+      bestCov = c;
+    }
+  });
+  return best;
+}
+
+function setScore(title, parts) {
+  score = null;
+  if (parts && parts.length) {
+    const bars = Math.max(state.bars.length, ...parts.map((p) => Math.floor(Math.max(...p.notes.map((n) => n.t)) / 4) + 1));
+    const analysis = analyseParts(parts, bars);
+    if (analysis.length) {
+      score = { title, parts, analysis, model: Math.max(0, analysis.findIndex((a) => a.role === "Mélodie")), adapt: true, echo: false };
+    }
+  }
+  renderScore();
+}
+
+const spark = (a) => {
+  const max = Math.max(1, ...a.perBar);
+  const w = 3;
+  const bars = a.perBar.map((n, i) => `<rect x="${i * (w + 1)}" y="${24 - (n / max) * 24}" width="${w}" height="${(n / max) * 24}"/>`).join("");
+  return `<svg class="spark" viewBox="0 0 ${a.perBar.length * (w + 1)} 24" preserveAspectRatio="none" role="img" aria-label="Notes par mesure">${bars}</svg>`;
+};
+
+function renderScore() {
+  const box = $("#score-panel");
+  box.hidden = !score;
+  if (!score) {
+    box.innerHTML = "";
+    return;
+  }
+  const rows = score.analysis
+    .map(
+      (a, i) => `<tr>
+        <td><label><input type="radio" name="model" value="${i}" ${i === score.model ? "checked" : ""}> <strong>${esc(a.name)}</strong></label><br><small>${esc(a.role)}</small></td>
+        <td>${spark(a)}<small>${a.count} notes · ${a.density.toFixed(1)} par mesure jouée</small></td>
+        <td>${esc(a.text)}</td></tr>`,
+    )
+    .join("");
+  box.innerHTML = `
+    <h3>Partition « ${esc(score.title)} » : ce que jouent les instruments</h3>
+    <p class="hint">Choisis une partie comme <strong>modèle</strong> : les phrases proposées en reprendront le style (tessiture, mouvement, rythme) et la gamme conseillée sera celle qui colle le mieux à ses notes. Les hauteurs sont en sons réels.</p>
+    <div class="table-wrap"><table class="score-table"><thead><tr><th>Partie</th><th>Activité par mesure</th><th>Tendance</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <label class="inline"><input type="checkbox" id="score-adapt" ${score.adapt ? "checked" : ""}> Adapter mes phrases au style du modèle</label>
+    <label class="inline"><input type="checkbox" id="score-echo" ${score.echo ? "checked" : ""}> Reprendre le rythme du modèle sur la mesure</label>
+    <button type="button" id="score-forget" class="secondary">Oublier la partition</button>`;
 }
 
 function chipLabel(item) {
@@ -289,6 +386,7 @@ function renderDetail(resolved = resolveGrid()) {
       <p><strong>${esc(scale.name)}</strong> — ${esc(scale.plain)}</p>
       <p class="recipe">Recette : <span>${scale.degrees.map((d) => esc(d.replaceAll("b", "♭").replaceAll("#", "♯"))).join(" ")}</span> <small>(numéros des notes de la gamme majeure ; ♭ = un demi-ton plus bas, ♯ = un demi-ton plus haut)</small></p>
     </div>
+    ${coverageHint(a, scale)}
     <div class="staff-wrap">${staffSvg(scaleDeco, inst.clef, style)}</div>
     <p class="legend"><span class="dot tone"></span> note de l'accord (à viser sur les temps forts) <span class="dot"></span> note de passage${anyOut ? ` · <span class="dot out"></span> hors tessiture` : ""}</p>
     <div class="actions">
@@ -297,7 +395,7 @@ function renderDetail(resolved = resolveGrid()) {
     </div>
     ${
       phrase
-        ? `<div class="phrase"><h3>Phrase proposée <small>(une mesure, 4 temps)</small></h3>
+        ? `<div class="phrase"><h3>Phrase proposée <small>(une mesure, 4 temps${phrase.style ? ` · dans le style de « ${esc(phrase.style)} »` : ""})</small></h3>
            <div class="staff-wrap">${phraseSvg(
              phrase.events.map((e) => (e.note ? { ...e, ...decorate(e.note, tonePcs), note: e.note } : e)),
              inst.clef,
@@ -311,6 +409,14 @@ function renderDetail(resolved = resolveGrid()) {
            <p class="hint">Notes d'accord sur les temps, notes de gamme entre les deux, parfois un silence. Joue-la, puis change-la.</p></div>`
         : ""
     }`;
+}
+
+function coverageHint(a, scale) {
+  if (!score) return "";
+  const notes = scoreNotes(sel.bar, sel.idx);
+  const c = notes.length ? scaleCoverage(a.parsed.pc, scale.degrees, notes) : null;
+  if (c === null) return `<p class="hint">Pas de note de la partition sur cet accord.</p>`;
+  return `<p class="hint">Sur la partition, ${Math.round(c * 100)} % des notes jouées sur cet accord (${notes.length} notes) appartiennent à cette gamme.</p>`;
 }
 
 /* ----------------------------------------------------------------- audio */
@@ -521,9 +627,9 @@ function songStatus(msg, error = false) {
 }
 
 /** Enregistre une grille dans « Mes morceaux » et la sélectionne. */
-function addSong(name, bars) {
+function addSong(name, bars, parts) {
   const id = "song-" + Date.now().toString(36);
-  songs.push({ id, name: name.trim().slice(0, 80) || "Sans titre", bars: bars.slice(0, 64) });
+  songs.push({ id, name: name.trim().slice(0, 80) || "Sans titre", bars: bars.slice(0, 64), parts: cleanParts(parts) });
   saveSongs();
   state.preset = id;
   renderPresets();
@@ -538,11 +644,13 @@ function initSongs() {
     e.target.value = "";
     if (!file) return;
     try {
-      const { bars, skipped, title } = await importFile(file);
+      const { bars, skipped, title, parts } = await importFile(file);
       setBars(bars);
-      addSong(title, bars);
+      addSong(title, bars, parts);
+      setScore(title, parts);
       songStatus(
         `« ${title} » importé : ${bars.length} mesures` + (skipped ? ` (${skipped} accord(s) non reconnu(s) ignoré(s))` : "") +
+          (score ? ` et ${score.analysis.length} partie(s) analysée(s) (voir plus bas)` : "") +
           ". Les accords sont lus en sons réels ; corrige à la main si besoin.",
       );
     } catch (err) {
@@ -554,7 +662,7 @@ function initSongs() {
     if (!bars.some(Boolean)) return songStatus("La grille est vide.", true);
     const name = window.prompt("Nom du morceau :", "Mon morceau");
     if (name === null) return;
-    addSong(name, bars);
+    addSong(name, bars, score?.parts);
     songStatus(`« ${name.trim() || "Sans titre"} » enregistré dans « Mes morceaux » (dans ce navigateur).`);
   });
   $("#paste-song").addEventListener("click", () => {
@@ -593,6 +701,7 @@ function setBars(bars) {
 function init() {
   renderControls();
   renderGrid();
+  if (isSong(state.preset)) setScore(findPreset(state.preset).name, findPreset(state.preset).parts);
 
   const bind = (id, fn, evt = "change") => $(id).addEventListener(evt, fn);
   bind("#inst", (e) => {
@@ -625,6 +734,7 @@ function init() {
   bind("#apply-preset", () => {
     const p = findPreset(state.preset);
     setBars(isSong(p.id) ? [...p.bars] : presetToBars(p, rootPc(state.key), keyPref()));
+    setScore(p.name, isSong(p.id) ? p.parts : null);
   }, "click");
   initSongs();
   bind(
@@ -679,6 +789,23 @@ function init() {
     if (chip) select(Number(chip.dataset.bar), Number(chip.dataset.idx));
   });
 
+  $("#score-panel").addEventListener("change", (e) => {
+    if (!score) return;
+    if (e.target.name === "model") {
+      score.model = Number(e.target.value);
+      phrase = null;
+      select(sel.bar, sel.idx);
+    } else if (e.target.id === "score-adapt") score.adapt = e.target.checked;
+    else if (e.target.id === "score-echo") score.echo = e.target.checked;
+  });
+  $("#score-panel").addEventListener("click", (e) => {
+    if (e.target.id === "score-forget") {
+      score = null;
+      renderScore();
+      select(sel.bar, sel.idx);
+    }
+  });
+
   $("#detail").addEventListener("click", (e) => {
     const tab = e.target.closest("[data-scale]");
     if (tab) {
@@ -697,7 +824,17 @@ function init() {
       if (!item) return;
       const a = item.a;
       const scale = a.scales[Math.min(scalePick, a.scales.length - 1)];
-      phrase = { events: generatePhrase(a.writtenRoot, scale.id, a.toneDegrees, Math.random, instrument().range) };
+      let style = {};
+      if (score) {
+        const an = score.analysis[score.model];
+        if (score.adapt && an) style = styleFromAnalysis(an, instrument().range);
+        if (score.echo && modelPart()) {
+          const rhythm = rhythmFromNotes(notesIn(modelPart(), sel.bar * 4, sel.bar * 4 + 4), sel.bar * 4);
+          if (rhythm) style.rhythm = rhythm;
+        }
+      }
+      const used = score && (score.adapt || score.echo) ? score.analysis[score.model]?.name : null;
+      phrase = { events: generatePhrase(a.writtenRoot, scale.id, a.toneDegrees, Math.random, instrument().range, style), style: used };
       renderDetail();
     }
   });

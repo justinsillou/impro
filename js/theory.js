@@ -292,27 +292,65 @@ export const RHYTHMS = [
  * déformer, rejeter.
  *
  * `range` (MIDI écrit) borne les notes à la tessiture de l'instrument.
+ * `style` (facultatif, voir `styleFromAnalysis`) oriente la phrase :
+ *   eighths (part de croches), off (contretemps), step (probabilité de
+ *   mouvement conjoint), up (tendance montante), rest (probabilité de silence),
+ *   center (hauteur MIDI visée), rhythm ([{ len, rest }] imposé).
  */
-export function generatePhrase(root, scaleId, toneDegrees, rng = Math.random, range = [0, 127]) {
-  const rootMidi = midiOf(root);
-  const lo = Math.max(rootMidi - 4, range[0]);
-  const hi = Math.min(rootMidi + 12, range[1]);
-  const pool = scalePool(root, scaleId, lo, hi);
-  const tonePcs = new Set(toneDegrees.map((t) => (rootMidi + degreeSemis(t)) % 12));
-  const isTone = (n) => tonePcs.has(midiOf(n) % 12);
+export function generatePhrase(root, scaleId, toneDegrees, rng = Math.random, range = [0, 127], style = {}) {
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
 
-  const rhythm = pick(RHYTHMS);
-  const starts = rhythm.map((_, k) => rhythm.slice(0, k).reduce((a, b) => a + b, 0));
+  // on déplace la fondamentale d'octave pour viser la hauteur demandée
+  let base = root;
+  if (Number.isFinite(style.center)) {
+    base = makeNote(root.letter, root.acc, root.oct + Math.round((style.center - 4 - midiOf(root)) / 12));
+  }
+  const rootMidi = midiOf(base);
+  const lo = Math.max(rootMidi - 4, range[0]);
+  const hi = Math.min(rootMidi + 12, range[1]);
+  let pool = scalePool(base, scaleId, lo, hi);
+  if (!pool.length) pool = scalePool(root, scaleId, Math.max(midiOf(root) - 4, range[0]), Math.min(midiOf(root) + 12, range[1]));
+  const tonePcs = new Set(toneDegrees.map((t) => (midiOf(root) + degreeSemis(t)) % 12));
+  const isTone = (n) => tonePcs.has(midiOf(n) % 12);
+
+  // rythme : imposé, sinon tiré parmi RHYTHMS (pondéré par le style)
+  let items;
+  if (style.rhythm) {
+    items = style.rhythm.map((r) => ({ len: r.len, rest: !!r.rest }));
+  } else {
+    let rhythm;
+    if (Number.isFinite(style.eighths) || Number.isFinite(style.off)) {
+      const score = (r) => {
+        const starts = r.map((_, k) => r.slice(0, k).reduce((a, b) => a + b, 0));
+        const e = r.filter((x) => x === 1).length / r.length;
+        const o = starts.filter((x) => x % 2 === 1).length / r.length;
+        const d = Math.abs(e - (style.eighths ?? e)) + Math.abs(o - (style.off ?? o));
+        return Math.exp(-4 * d);
+      };
+      const w = RHYTHMS.map(score);
+      let x = rng() * w.reduce((a, b) => a + b, 0);
+      rhythm = RHYTHMS.find((_, k) => (x -= w[k]) <= 0) ?? RHYTHMS[0];
+    } else {
+      rhythm = pick(RHYTHMS);
+    }
+    items = rhythm.map((len) => ({ len, rest: false }));
+  }
+  let at = 0;
+  for (const it of items) {
+    it.start = at;
+    at += it.len;
+  }
 
   const firsts = pool.map((n, j) => ({ n, j })).filter(({ n }) => isTone(n) && midiOf(n) <= rootMidi + 7);
   let idx = (firsts.length ? pick(firsts) : { j: 0 }).j;
-  let dir = rng() < 0.5 ? 1 : -1;
+  let dir = rng() < (style.up ?? 0.5) ? 1 : -1;
+  const stepP = style.step ?? 0.75;
+  const restP = style.rest ?? 0.25;
   const out = [];
 
-  rhythm.forEach((len, k) => {
-    const start = starts[k];
-    if (k > 0) {
+  items.forEach((it, k) => {
+    const { start, len } = it;
+    if (k > 0 && !it.rest) {
       if (start % 2 === 0) {
         // sur le temps : on atterrit sur une note d'accord proche
         const near = pool
@@ -321,7 +359,8 @@ export function generatePhrase(root, scaleId, toneDegrees, rng = Math.random, ra
         if (near.length) idx = pick(near).j;
       } else {
         if (rng() < 0.3) dir = -dir;
-        const step = rng() < 0.75 ? 1 : 2;
+        const r = rng();
+        const step = r < stepP ? 1 : r < stepP + (1 - stepP) * 0.7 ? 2 : 3;
         let next = idx + dir * step;
         if (next < 0 || next >= pool.length) {
           dir = -dir;
@@ -330,8 +369,8 @@ export function generatePhrase(root, scaleId, toneDegrees, rng = Math.random, ra
         idx = Math.max(0, Math.min(pool.length - 1, next));
       }
     }
-    const last = k === rhythm.length - 1;
-    const rest = k > 0 && !last && start % 2 === 1 && rng() < 0.25;
+    const last = k === items.length - 1;
+    const rest = it.rest || (!style.rhythm && k > 0 && !last && start % 2 === 1 && rng() < restP);
     out.push({ note: rest ? null : pool[idx], start, len });
   });
   return out;

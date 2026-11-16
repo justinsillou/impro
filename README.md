@@ -12,6 +12,7 @@ Mini projet lié à l'article de blog *Improviser sur une grille : gammes, trans
 - Grille d'accords (4/4), grilles types en degrés (blues, blues mineur, II–V–I, Anatole, Les feuilles mortes, Rhythm changes, pop…), choix **dièses ♯ / bémols ♭**, transposition pour Sib, Mib, Fa, clé de fa…
 - Gammes et notes d'accord sur une portée, avec la **tessiture** de l'instrument (notes hors limites en rouge).
 - **Mes morceaux** : import d'une partition MuseScore (`.mscz`, `.mscx`), MusicXML (`.musicxml`, `.xml`, `.mxl`) ou texte d'accords ; seuls les chiffrages d'accords sont lus. Gardés dans le navigateur (localStorage).
+- **Analyse de la partition** : pour chaque instrument, tessiture, mouvement (conjoint / sauts), rythme, activité par mesure et rôle (mélodie, basse, harmonie). Au choix, une partie sert de **modèle** : les phrases proposées reprennent son style (et éventuellement son rythme sur la mesure) et la gamme conseillée est celle qui couvre le mieux ses notes.
 - Phrases d'une mesure avec rythme et silences ; lecture avec basse, accords, métronome, **swing** et **batterie** légère.
 - **Exports** : MIDI et MusicXML (grille ou phrase). Le MusicXML contient l'élément `<transpose>` ; les chiffrages d'accords sont en sons réels.
 - **Clavier MIDI** (Web MIDI : Chrome, Edge, Opera) : la note jouée s'affiche transposée, avec verdict par rapport à l'accord en cours.
@@ -39,6 +40,7 @@ Les tests couvrent la théorie (orthographe des notes, transposition, gammes, an
 | `js/theory.js` | Notes, degrés, gammes, accords, instruments transpositeurs, génération de phrase. Pur, testé. |
 | `js/presets.js` | Grilles types écrites en degrés (blues, II–V–I, Anatole…), plaquées dans la tonalité choisie. |
 | `js/import.js` | Import de morceaux (texte, MusicXML, MuseScore, ZIP). |
+| `js/analysis.js` | Statistiques par instrument, style de phrase, rythme repris, couverture de gamme. Pur, testé. |
 | `js/staff.js` | Portée en SVG (clés de sol et de fa, altérations, lignes supplémentaires). |
 | `js/audio.js` | Moteur Web Audio : accords, basse, batterie, métronome, boucle, notes en direct. |
 | `js/midi.js` | Entrée clavier MIDI (Web MIDI). |
