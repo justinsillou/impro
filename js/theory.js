@@ -98,20 +98,20 @@ export function degreeNote(root, token) {
 }
 
 export const SCALES = {
-  ionian: { name: "Ionien (gamme majeure)", degrees: ["1", "2", "3", "4", "5", "6", "7"] },
-  dorian: { name: "Dorien", degrees: ["1", "2", "b3", "4", "5", "6", "b7"] },
-  phrygian: { name: "Phrygien", degrees: ["1", "b2", "b3", "4", "5", "b6", "b7"] },
-  lydian: { name: "Lydien", degrees: ["1", "2", "3", "#4", "5", "6", "7"] },
-  mixolydian: { name: "Mixolydien", degrees: ["1", "2", "3", "4", "5", "6", "b7"] },
-  aeolian: { name: "Éolien (mineur naturel)", degrees: ["1", "2", "b3", "4", "5", "b6", "b7"] },
-  locrian: { name: "Locrien", degrees: ["1", "b2", "b3", "4", "b5", "b6", "b7"] },
-  melodicMinor: { name: "Mineur mélodique", degrees: ["1", "2", "b3", "4", "5", "6", "7"] },
-  phrygDom: { name: "Mixolydien ♭9 ♭13 (phrygien dominant)", degrees: ["1", "b2", "3", "4", "5", "b6", "b7"] },
-  dimWH: { name: "Diminuée ton / demi-ton", degrees: ["1", "2", "b3", "4", "b5", "b6", "6", "7"] },
-  dimHW: { name: "Diminuée demi-ton / ton", degrees: ["1", "b2", "#2", "3", "#4", "5", "6", "b7"] },
-  majPent: { name: "Pentatonique majeure", degrees: ["1", "2", "3", "5", "6"] },
-  minPent: { name: "Pentatonique mineure", degrees: ["1", "b3", "4", "5", "b7"] },
-  blues: { name: "Gamme blues", degrees: ["1", "b3", "4", "b5", "5", "b7"] },
+  ionian: { name: "Ionien (gamme majeure)", plain: "La gamme majeure, celle qu'on connaît tous (do ré mi fa sol la si). Sonne stable, joyeux, « résolu ».", degrees: ["1", "2", "3", "4", "5", "6", "7"] },
+  dorian: { name: "Dorien", plain: "Une gamme mineure un peu moins triste que le mineur normal : sa 6te est relevée. Son typique du jazz, du funk et du rock cool.", degrees: ["1", "2", "b3", "4", "5", "6", "b7"] },
+  phrygian: { name: "Phrygien", plain: "Mineur avec une 2de collée à la tonique (♭2). Sonne sombre, tendu, un peu espagnol.", degrees: ["1", "b2", "b3", "4", "5", "b6", "b7"] },
+  lydian: { name: "Lydien", plain: "Majeur avec la 4te relevée (♯4). Sonne rêveur, flottant, « musique de film ».", degrees: ["1", "2", "3", "#4", "5", "6", "7"] },
+  mixolydian: { name: "Mixolydien", plain: "Majeur avec la 7e abaissée (♭7). C'est le son du blues et du rock, et la gamme naturelle de l'accord de septième (G7, C7…) : une couleur joyeuse mais pas « finie ».", degrees: ["1", "2", "3", "4", "5", "6", "b7"] },
+  aeolian: { name: "Éolien (mineur naturel)", plain: "Le mineur naturel : sérieux, mélancolique. La gamme mineure de base.", degrees: ["1", "2", "b3", "4", "5", "b6", "b7"] },
+  locrian: { name: "Locrien", plain: "Instable et tendue (♭2 et ♭5). On la garde surtout pour l'accord demi-diminué ; on ne s'y installe pas.", degrees: ["1", "b2", "b3", "4", "b5", "b6", "b7"] },
+  melodicMinor: { name: "Mineur mélodique", plain: "Mineur avec 6te et 7e relevées : un mineur « brillant », fréquent en jazz sur les accords mineur-sixte.", degrees: ["1", "2", "b3", "4", "5", "6", "7"] },
+  phrygDom: { name: "Mixolydien ♭9 ♭13 (phrygien dominant)", plain: "Le mixolydien avec ♭9 et ♭13. Couleur tendue, orientale/flamenco, qui tire vers un accord mineur. À jouer sur un V7♭9.", degrees: ["1", "b2", "3", "4", "5", "b6", "b7"] },
+  dimWH: { name: "Diminuée ton / demi-ton", plain: "Gamme symétrique : ton, demi-ton, ton, demi-ton… Elle sonne « mystérieuse » et colle à l'accord diminué.", degrees: ["1", "2", "b3", "4", "b5", "b6", "6", "7"] },
+  dimHW: { name: "Diminuée demi-ton / ton", plain: "Même idée mais en commençant par un demi-ton. Marche sur les dominantes très tendues (7♭9).", degrees: ["1", "b2", "#2", "3", "#4", "5", "6", "b7"] },
+  majPent: { name: "Pentatonique majeure", plain: "Cinq notes de la gamme majeure, sans les deux qui frottent (4te et 7e). Très difficile de se tromper : un bon raccourci pour débuter.", degrees: ["1", "2", "3", "5", "6"] },
+  minPent: { name: "Pentatonique mineure", plain: "Cinq notes : la gamme mineure sans les 2de et 6te. LE raccourci du blues et du rock, qui passe presque partout.", degrees: ["1", "b3", "4", "5", "b7"] },
+  blues: { name: "Gamme blues", plain: "La pentatonique mineure plus la « blue note » (♭5), qui frotte volontairement. C'est ce qui donne le côté blues.", degrees: ["1", "b3", "4", "b5", "5", "b7"] },
 };
 
 /** Notes d'une gamme, de la fondamentale à son octave incluse. */
@@ -164,18 +164,24 @@ const ALIASES = {
 };
 
 export function parseChord(text) {
-  const m = /^([A-Ga-g])([#b♯♭]?)(.*)$/.exec(String(text).trim());
+  const t = String(text).trim();
+  // noms français d'abord (« Do », « Ré », « Sol »…) ; sinon lettre A-G
+  const fr = /^(Do|Ré|Re|Mi|Fa|Sol|La|Si)([#b♯♭]?)(.*)$/.exec(t);
+  const m = fr ?? /^([A-Ga-g])([#b♯♭]?)(.*)$/.exec(t);
   if (!m) return null;
   const quality = ALIASES[m[3]];
   if (quality === undefined) return null;
-  const letter = LETTERS.indexOf(m[1].toUpperCase());
+  const letter = fr
+    ? NAMES_FR.findIndex((n) => n === m[1] || (m[1] === "Re" && n === "Ré"))
+    : LETTERS.indexOf(m[1].toUpperCase());
   const acc = m[2] === "#" || m[2] === "♯" ? 1 : m[2] === "b" || m[2] === "♭" ? -1 : 0;
   const pc = (((NATURAL_PC[letter] + acc) % 12) + 12) % 12;
   return { letter, acc, pc, quality };
 }
 
-export function chordSymbol(root, quality) {
-  return LETTERS[root.letter] + (ACC_SYMBOL[root.acc] ?? "") + QUALITIES[quality].symbol;
+export function chordSymbol(root, quality, style = "en") {
+  const base = style === "fr" ? NAMES_FR[root.letter] : LETTERS[root.letter];
+  return base + (ACC_SYMBOL[root.acc] ?? "") + QUALITIES[quality].symbol;
 }
 
 /* ---------- Instruments (transposition) ---------- */
@@ -217,12 +223,19 @@ export function analyseChord(text, inst) {
     parsed: c,
     quality: c.quality,
     label: def.label,
+    concertRoot,
     concertSymbol: chordSymbol(concertRoot, c.quality),
     writtenSymbol: chordSymbol(writtenRoot, c.quality),
     writtenRoot,
     tones: def.tones.map((t) => degreeNote(writtenRoot, t)),
     toneDegrees: def.tones,
-    scales: def.scales.map((id) => ({ id, name: SCALES[id].name, notes: scaleNotes(writtenRoot, id) })),
+    scales: def.scales.map((id) => ({
+      id,
+      name: SCALES[id].name,
+      plain: SCALES[id].plain,
+      degrees: SCALES[id].degrees,
+      notes: scaleNotes(writtenRoot, id),
+    })),
   };
 }
 

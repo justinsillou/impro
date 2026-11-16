@@ -1,5 +1,5 @@
 import {
-  INSTRUMENTS, ROOT_CHOICES, QUALITIES, analyseChord, degreeSemis, generatePhrase,
+  INSTRUMENTS, ROOT_CHOICES, analyseChord, chordSymbol, degreeSemis, generatePhrase,
   instrumentById, midiOf, noteName, parseChord, soundingMidi,
 } from "./theory.js";
 import { PRESETS, presetToBars } from "./presets.js";
@@ -172,7 +172,7 @@ function chipLabel(item) {
   if (item.invalid) return `<span class="chip invalid" title="Accord non reconnu">${esc(item.text)} ?</span>`;
   if (!item.a) return `<span class="chip muted">—</span>`;
   const first = item.a.scales[0].name.split(" (")[0];
-  return `${item.implicit || REPEAT.has(item.text) ? "↺ " : ""}${esc(item.a.writtenSymbol)}<small>${esc(first)}</small>`;
+  return `${item.implicit || REPEAT.has(item.text) ? "↺ " : ""}${esc(chordSymbol(item.a.writtenRoot, item.a.quality, state.names))}<small>${esc(first)}</small>`;
 }
 
 function updateDerived() {
@@ -218,12 +218,16 @@ function renderDetail(resolved = resolveGrid()) {
 
   box.innerHTML = `
     <div class="detail-head">
-      <h2>${esc(a.concertSymbol)}
-        ${transposed ? `<span class="arrow" aria-hidden="true">→</span> <span class="written">${esc(a.writtenSymbol)}</span> <small>écrit pour ton instrument</small>` : ""}
+      <h2>${esc(chordSymbol(a.concertRoot, a.quality, style))}
+        ${transposed ? `<span class="arrow" aria-hidden="true">→</span> <span class="written">${esc(chordSymbol(a.writtenRoot, a.quality, style))}</span> <small>écrit pour ton instrument</small>` : ""}
       </h2>
       <p class="muted">${esc(a.label)} · notes de l'accord : <strong>${a.tones.map((n) => esc(noteName(n, style))).join(" – ")}</strong></p>
     </div>
     <div class="tabs" role="tablist" aria-label="Gammes possibles">${tabs}</div>
+    <div class="scale-help">
+      <p><strong>${esc(scale.name)}</strong> — ${esc(scale.plain)}</p>
+      <p class="recipe">Recette : <span>${scale.degrees.map((d) => esc(d.replaceAll("b", "♭").replaceAll("#", "♯"))).join(" ")}</span> <small>(numéros des notes de la gamme majeure ; ♭ = un demi-ton plus bas, ♯ = un demi-ton plus haut)</small></p>
+    </div>
     <div class="staff-wrap">${staffSvg(flagged(scale.notes), inst.clef, style)}</div>
     <p class="legend"><span class="dot tone"></span> note de l'accord (à viser sur les temps forts) <span class="dot"></span> note de passage</p>
     <div class="actions">

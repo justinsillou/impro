@@ -75,3 +75,11 @@ test("phrase : 8 notes, toutes dans la gamme", () => {
     for (const n of p) assert.ok(pcs.has(midiOf(n) % 12));
   }
 });
+
+test("noms français : Sol7, Rém7, Sib, Mi♭maj7", () => {
+  assert.equal(parseChord("Sol7").pc, 7);
+  assert.equal(parseChord("Rém7").quality, "m7");
+  assert.equal(parseChord("Re7").pc, 2);
+  assert.equal(parseChord("Sib").pc, 10);
+  assert.equal(parseChord("Mibmaj7").pc, 3);
+});

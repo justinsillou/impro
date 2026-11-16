@@ -113,6 +113,13 @@ output { min-width: 2.2em; font-variant-numeric: tabular-nums; }
 .tab { background: transparent; color: var(--text); border-color: var(--line); padding: 5px 10px; font-size: .9rem; }
 .tab[aria-selected="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
 @media (prefers-color-scheme: dark) { .tab[aria-selected="true"] { color: #1a1008; } }
+.scale-help { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: .95rem; }
+.scale-help p { margin: 4px 0; }
+.recipe span { font-weight: 700; letter-spacing: .04em; }
+.recipe small { color: var(--muted); }
+.explain { margin-top: 16px; border-top: 1px dashed var(--line); padding-top: 10px; }
+.explain summary { cursor: pointer; font-weight: 600; }
+.explain p, .explain li { font-size: .95rem; }
 .staff-wrap { overflow-x: auto; padding: 4px 0; }
 .staff { display: block; max-width: none; height: auto; color: var(--staff); }
 .staff-line { stroke: var(--staff); stroke-width: 1; }
