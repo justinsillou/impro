@@ -154,7 +154,7 @@ output { min-width: 2.2em; font-variant-numeric: tabular-nums; }
 
 @media print {
   body { background: #fff; color: #000; }
-  .controls, .transport, .site-footer, #h-detail, #detail, .panel:nth-of-type(3), .hint { display: none !important; }
+  .controls, .transport, .site-footer, #h-detail, #detail, #detail-panel, #follow, .hint { display: none !important; }
   .panel { border: none; padding: 0; }
   .grid { grid-template-columns: repeat(4, 1fr); }
   .bar-input { border: none; background: none; }
@@ -205,3 +205,12 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 .3em; font-s
 .excerpt { margin: 10px 0; }
 .excerpt h3 { font-size: 1rem; margin: 6px 0; }
 .excerpt h3 small { color: var(--muted); font-weight: 400; }
+
+/* suivi de la partition pendant la lecture */
+.staff-wrap.rel { position: relative; }
+.cursor { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--accent); pointer-events: none; z-index: 2; }
+.bar-bg { fill: transparent; }
+.bar-bg.playing { fill: var(--accent-soft); fill-opacity: .9; }
+.follow-head { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin-bottom: 8px; }
+.follow-now { font-weight: 700; font-size: 1.15rem; min-width: 12rem; }
+.follow-now small { font-weight: 400; color: var(--muted); }

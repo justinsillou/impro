@@ -3,7 +3,7 @@ import {
   inRange, instrumentById, makeNote, midiOf, noteName, parseChord, phraseNotes, soundingMidi, spellRoot,
 } from "./theory.js";
 import { PRESETS, presetToBars } from "./presets.js";
-import { phraseSvg, scoreSvg, staffSvg } from "./staff.js";
+import { phraseSvg, scoreSvg, scoreX, staffSvg } from "./staff.js";
 import { Engine } from "./audio.js";
 import { MidiIn } from "./midi.js";
 import { download, midiFile, musicXml } from "./export.js";
@@ -18,6 +18,7 @@ const esc = (s) =>
 const STORAGE_KEY = "impro-grille-v1";
 const SONGS_KEY = "impro-morceaux-v1";
 const REPEAT = new Set(["%", "/", "-", "."]);
+const GRID_MAX = 16; // mesures affichées et jouées à la fois (au-delà : « sections »)
 const engine = new Engine();
 const midiIn = new MidiIn();
 
@@ -31,7 +32,7 @@ function loadSongs() {
     const raw = JSON.parse(localStorage.getItem(SONGS_KEY) ?? "[]");
     return (Array.isArray(raw) ? raw : [])
       .filter((x) => x && typeof x.id === "string" && typeof x.name === "string" && Array.isArray(x.bars))
-      .map((x) => ({ id: x.id, name: x.name.slice(0, 80), bars: x.bars.slice(0, 64).map((b) => String(b).slice(0, 40)), parts: cleanParts(x.parts) }))
+      .map((x) => ({ id: x.id, name: x.name.slice(0, 80), bars: x.bars.slice(0, 64).map((b) => String(b).slice(0, 40)), parts: cleanParts(x.parts), offset: Number.isInteger(x.offset) && x.offset >= 0 && x.offset < 64 ? x.offset : 0 }))
       .filter((x) => x.bars.length);
   } catch {
     return [];
@@ -71,6 +72,7 @@ const DEFAULT = {
   acc: "auto",
   tempo: 100,
   key: "C",
+  sec: 0,
   preset: PRESETS[0].id,
   loop: true,
   click: true,
@@ -83,8 +85,9 @@ function sanitize(raw) {
   const s = { ...DEFAULT };
   if (!raw || typeof raw !== "object") return s;
   if (Array.isArray(raw.bars) && raw.bars.length >= 1 && raw.bars.length <= 64) {
-    s.bars = raw.bars.map((b) => String(b).slice(0, 40));
+    s.bars = raw.bars.slice(0, GRID_MAX).map((b) => String(b).slice(0, 40));
   }
+  if (Number.isInteger(raw.sec) && raw.sec >= 0 && raw.sec < 4) s.sec = raw.sec;
   if (INSTRUMENTS.some((i) => i.id === raw.inst)) s.inst = raw.inst;
   if (raw.names === "fr" || raw.names === "en") s.names = raw.names;
   if (["auto", "sharp", "flat"].includes(raw.acc)) s.acc = raw.acc;
@@ -129,6 +132,8 @@ let scalePick = 0;
 let phrase = null; // { events, scaleId }
 let saveTimer = null;
 let currentItem = null; // accord en cours pendant la lecture
+let followBar = null; // mesure de la grille jouée en ce moment (suivi de la partition)
+let viewFrom = 0; // première mesure affichée dans la partition
 let score = null; // partition importée : { title, parts, analysis, model, adapt, echo }
 
 function save() {
@@ -207,6 +212,35 @@ function renderPresetInfo() {
     : p.info;
   $("#delete-song").hidden = !isSong(state.preset);
   $("#key").disabled = isSong(state.preset);
+  renderSection();
+}
+
+/** Grille complète de la source choisie (grille type ou morceau), avant découpe en sections. */
+function sourceBars() {
+  const p = findPreset(state.preset);
+  return isSong(p.id) ? p.bars : presetToBars(p, rootPc(state.key), keyPref());
+}
+
+function renderSection() {
+  const n = sourceBars().length;
+  const count = Math.ceil(n / GRID_MAX);
+  $("#section-field").hidden = count <= 1;
+  $("#section").innerHTML = Array.from(
+    { length: count },
+    (_, k) => `<option value="${k}">Mesures ${k * GRID_MAX + 1} – ${Math.min(n, (k + 1) * GRID_MAX)}</option>`,
+  ).join("");
+  $("#section").value = String(Math.min(state.sec, count - 1));
+}
+
+/** Charge dans la grille une section de 16 mesures de la source choisie. */
+function loadSection(sec) {
+  const p = findPreset(state.preset);
+  const song = isSong(p.id);
+  state.sec = sec;
+  const bars = sourceBars().slice(sec * GRID_MAX, (sec + 1) * GRID_MAX);
+  setBars(bars.length ? bars : ["", "", "", ""]);
+  setScore(p.name, song ? p.parts : null, song ? (p.offset ?? 0) + sec * GRID_MAX : 0);
+  renderSection();
 }
 
 function renderGrid() {
@@ -247,10 +281,13 @@ function select(bar, idx) {
 
 /* ------------------------------------------------------- partition importée */
 
+/** Mesure de la partition qui correspond à la mesure `n` de la grille (la grille est une section du morceau). */
+const absBar = (n) => (score?.offset ?? 0) + n;
+
 /** Fenêtre (en temps depuis le début) occupée par un accord de la grille. */
 function chordWindow(bar, idx, resolved = resolveGrid()) {
   const items = resolved[bar] ?? [];
-  const from = bar * 4 + items.slice(0, idx).reduce((s, it) => s + it.beats, 0);
+  const from = absBar(bar) * 4 + items.slice(0, idx).reduce((s, it) => s + it.beats, 0);
   return [from, from + (items[idx]?.beats ?? 4)];
 }
 
@@ -280,14 +317,15 @@ function bestScale(item) {
   return best;
 }
 
-function setScore(title, parts) {
+function setScore(title, parts, offset = 0) {
   score = null;
+  followBar = null;
   if (parts && parts.length) {
-    const bars = Math.max(state.bars.length, ...parts.map((p) => Math.floor(Math.max(...p.notes.map((n) => n.t)) / 4) + 1));
+    const bars = Math.max(1, ...parts.map((p) => Math.floor(Math.max(...p.notes.map((n) => n.t)) / 4) + 1));
     const analysis = analyseParts(parts, bars);
     if (analysis.length) {
       const model = Math.max(0, analysis.findIndex((a) => a.role === "Mélodie"));
-      score = { title, parts, analysis, model, view: model, bars: Math.min(64, bars), adapt: true, echo: false };
+      score = { title, parts, analysis, model, view: model, bars: Math.min(64, bars), offset, adapt: true, echo: false };
     }
   }
   renderScore();
@@ -316,8 +354,7 @@ function renderScore() {
     )
     .join("");
   box.innerHTML = `
-    <h3>Partition « ${esc(score.title)} »</h3>
-    <div id="score-view"></div>
+    <h3>Partition « ${esc(score.title)} » <small>(à suivre en bas, au-dessus de l'accord en détail)</small></h3>
     <h3>Ce que jouent les instruments</h3>
     <p class="hint">Choisis une partie comme <strong>modèle</strong> : les phrases proposées en reprendront le style (tessiture, mouvement, rythme) et la gamme conseillée sera celle qui colle le mieux à ses notes. Les hauteurs sont en sons réels.</p>
     <div class="table-wrap"><table class="score-table"><thead><tr><th>Partie</th><th>Activité par mesure</th><th>Tendance</th></tr></thead><tbody>${rows}</tbody></table></div>
@@ -348,7 +385,7 @@ function scoreBar(part, n, resolved) {
   return {
     n,
     label,
-    notes: notesIn(part, n * 4, n * 4 + 4).map((x) => ({ note: writtenNote(x.m), t: x.t - n * 4, d: x.d })),
+    notes: notesIn(part, absBar(n) * 4, absBar(n) * 4 + 4).map((x) => ({ note: writtenNote(x.m), t: x.t - absBar(n) * 4, d: x.d })),
   };
 }
 
@@ -360,32 +397,43 @@ function guessLabel(name) {
 }
 
 function renderScoreView() {
+  const panel = $("#follow");
   const box = $("#score-view");
-  if (!score || !box) return;
+  if (!panel || !box) return;
+  panel.hidden = !score;
+  if (!score) {
+    box.innerHTML = "";
+    return;
+  }
   const part = score.parts.find((p) => p.name === score.analysis[score.view]?.name) ?? score.parts[0];
   const resolved = resolveGrid();
-  const total = Math.max(score.bars, state.bars.length);
-  const from = Math.floor(sel.bar / VIEW_BARS) * VIEW_BARS;
+  const total = state.bars.length;
+  viewFrom = Math.floor((followBar ?? sel.bar) / VIEW_BARS) * VIEW_BARS;
+  const from = viewFrom;
   const to = Math.min(total, from + VIEW_BARS);
   const rows = [];
   for (let n = from; n < to; n += 4) {
     const bars = [];
     for (let k = n; k < Math.min(n + 4, to); k++) bars.push(scoreBar(part, k, resolved));
-    rows.push(`<div class="staff-wrap">${scoreSvg(bars, instrument().clef, { selected: sel.bar })}</div>`);
+    rows.push(`<div class="staff-wrap rel">${scoreSvg(bars, instrument().clef, { selected: sel.bar, playing: followBar ?? -1 })}<span class="cursor" hidden></span></div>`);
   }
-  const barNotes = score.parts.flatMap((p) => notesIn(p, sel.bar * 4, sel.bar * 4 + 4));
+  const barNotes = score.parts.flatMap((p) => notesIn(p, absBar(sel.bar) * 4, absBar(sel.bar) * 4 + 4));
   const guesses = chordCandidates(barNotes, accPref(), 4);
   const current = state.bars[sel.bar]?.trim();
   const empty = !state.bars.some((b) => b.trim());
   box.innerHTML = `
-    <div class="controls">
+    <div class="follow-head">
+      <button type="button" id="play2" aria-pressed="${engine.playing}">${engine.playing ? "■ Arrêter" : "▶ Jouer la grille"}</button>
+      <span class="follow-now" id="follow-now" aria-live="off"></span>
       <label class="field wide"><span>Partie affichée (écrite pour ton instrument)</span>
         <select id="score-view-part">${score.analysis.map((a, i) => `<option value="${i}" ${i === score.view ? "selected" : ""}>${esc(a.name)} — ${esc(a.role)}</option>`).join("")}</select>
       </label>
+    </div>
+    <div class="controls">
       <button type="button" class="secondary" data-page="-1" ${from === 0 ? "disabled" : ""}>◀ Mesures précédentes</button>
       <button type="button" class="secondary" data-page="1" ${to >= total ? "disabled" : ""}>Mesures suivantes ▶</button>
     </div>
-    <p class="hint">Mesures ${from + 1} à ${to} sur ${total}. <strong>Clique une mesure</strong> pour la choisir : la grille et le détail de l'accord suivent.</p>
+    <p class="hint">« ${esc(score.title)} » · mesures de la grille ${from + 1} à ${to} (mesures ${absBar(from) + 1} à ${absBar(to - 1) + 1} du morceau). Pendant la lecture, le trait orange avance et les mesures se tournent toutes seules. <strong>Clique une mesure</strong> pour la choisir : la grille et le détail de l'accord suivent.</p>
     ${rows.join("")}
     <div class="guess">
       <p><strong>Mesure ${sel.bar + 1}</strong>${current ? ` : grille actuelle <code>${esc(current)}</code>` : " : pas encore d'accord"}.
@@ -393,10 +441,78 @@ function renderScoreView() {
         ${guesses.map((g) => `<button type="button" class="chip" data-guess="${esc(g.name)}">${esc(guessLabel(g.name))}</button>`).join(" ")}
       </p>
       <p class="actions">
-        <button type="button" id="score-guess">🎼 Deviner toute la grille depuis les notes</button>
+        <button type="button" id="score-guess">🎼 Deviner la grille depuis les notes</button>
         ${empty ? `<small class="muted">La grille est vide : ce bouton la remplit (accords en sons réels, à corriger à la main).</small>` : ""}
       </p>
     </div>`;
+  updateNow();
+}
+
+/* ---- suivi de la lecture ---- */
+
+function updateNow() {
+  const el = $("#follow-now");
+  if (!el) return;
+  if (followBar === null || !currentItem?.a) {
+    el.textContent = "";
+    return;
+  }
+  const a = currentItem.a;
+  el.innerHTML = `Mesure ${followBar + 1} · ${esc(chordSymbol(a.writtenRoot, a.quality, state.names))} <small>(son réel : ${esc(chordSymbol(a.concertRoot, a.quality, state.names))})</small>`;
+}
+
+let followRaf = 0;
+let followLast = -1;
+
+function hideCursors() {
+  document.querySelectorAll("#score-view .cursor").forEach((c) => (c.hidden = true));
+}
+
+function followTick() {
+  if (!engine.playing) return stopTimer();
+  const beat = engine.beatNow();
+  if (beat !== null && beat >= 0 && score) {
+    const bar = Math.floor(beat / 4);
+    if (bar !== followLast) {
+      followLast = bar;
+      followBar = bar;
+      if (Math.floor(bar / VIEW_BARS) * VIEW_BARS !== viewFrom) renderScoreView();
+      document.querySelectorAll("#score-view .bar-bg").forEach((r) => r.classList.toggle("playing", Number(r.dataset.n) === bar));
+      updateNow();
+    }
+    const idx = bar - viewFrom;
+    const wraps = document.querySelectorAll("#score-view .staff-wrap");
+    wraps.forEach((w, r) => {
+      const c = w.querySelector(".cursor");
+      if (!c) return;
+      if (Math.floor(idx / 4) !== r) {
+        c.hidden = true;
+        return;
+      }
+      const x = scoreX(idx % 4, beat % 4);
+      c.hidden = false;
+      c.style.left = `${x}px`;
+      if (x < w.scrollLeft + 40 || x > w.scrollLeft + w.clientWidth - 60) w.scrollLeft = Math.max(0, x - 80);
+    });
+  }
+}
+
+const stopTimer = () => {
+  clearInterval(followRaf);
+  followRaf = 0;
+};
+
+function startFollow() {
+  followLast = -1;
+  stopTimer();
+  // minuteur plutôt que requestAnimationFrame : continue si l'onglet est masqué
+  if (score) followRaf = setInterval(followTick, 40);
+}
+
+function stopFollow() {
+  stopTimer();
+  followBar = null;
+  if (score) renderScoreView();
 }
 
 function chipLabel(item) {
@@ -579,8 +695,11 @@ function beatInfo() {
 }
 
 function setPlayButton(on) {
-  $("#play").textContent = on ? "■ Arrêter" : "▶ Jouer la grille";
-  $("#play").setAttribute("aria-pressed", String(on));
+  for (const b of [$("#play"), $("#play2")]) {
+    if (!b) continue;
+    b.textContent = on ? "■ Arrêter" : "▶ Jouer la grille";
+    b.setAttribute("aria-pressed", String(on));
+  }
 }
 
 function clearPlaying() {
@@ -597,6 +716,7 @@ function playGrid(opts = {}) {
   const { events, total, beatItems } = gridEvents();
   if (!total) return;
   setPlayButton(true);
+  startFollow();
   engine.play({
     events,
     totalBeats: total,
@@ -613,6 +733,7 @@ function playGrid(opts = {}) {
     onEnd: (ended) => {
       setPlayButton(false);
       clearPlaying();
+      stopFollow();
       opts.onEnd?.(ended);
       document.dispatchEvent(new CustomEvent("impro:chord-changed"));
     },
@@ -715,11 +836,12 @@ function songStatus(msg, error = false) {
 }
 
 /** Enregistre une grille dans « Mes morceaux » et la sélectionne. */
-function addSong(name, bars, parts) {
+function addSong(name, bars, parts, offset = 0) {
   const id = "song-" + Date.now().toString(36);
-  songs.push({ id, name: name.trim().slice(0, 80) || "Sans titre", bars: bars.slice(0, 64), parts: cleanParts(parts) });
+  songs.push({ id, name: name.trim().slice(0, 80) || "Sans titre", bars: bars.slice(0, 64), parts: cleanParts(parts), offset });
   saveSongs();
   state.preset = id;
+  state.sec = 0;
   renderPresets();
   renderPresetInfo();
   save();
@@ -733,11 +855,11 @@ function initSongs() {
     if (!file) return;
     try {
       const { bars, skipped, title, parts } = await importFile(file);
-      setBars(bars);
-      addSong(title, bars, parts);
-      setScore(title, parts);
+      addSong(title, bars, parts, 0);
+      setBars(bars.slice(0, GRID_MAX));
+      setScore(title, parts, 0);
       songStatus(
-        `« ${title} » importé : ${bars.length} mesures` + (skipped ? ` (${skipped} accord(s) non reconnu(s) ignoré(s))` : "") +
+        `« ${title} » importé : ${bars.length} mesures` + (bars.length > GRID_MAX ? ` (la grille en montre ${GRID_MAX} à la fois : choisis la « Section » pour la suite)` : "") + (skipped ? ` (${skipped} accord(s) non reconnu(s) ignoré(s))` : "") +
           (score ? ` et ${score.analysis.length} partie(s) analysée(s) (voir plus bas)` : "") +
           ". Les accords sont lus en sons réels ; corrige à la main si besoin.",
       );
@@ -750,7 +872,7 @@ function initSongs() {
     if (!bars.some(Boolean)) return songStatus("La grille est vide.", true);
     const name = window.prompt("Nom du morceau :", "Mon morceau");
     if (name === null) return;
-    addSong(name, bars, score?.parts);
+    addSong(name, bars, score?.parts, score?.offset ?? 0);
     songStatus(`« ${name.trim() || "Sans titre"} » enregistré dans « Mes morceaux » (dans ce navigateur).`);
   });
   $("#paste-song").addEventListener("click", () => {
@@ -789,7 +911,10 @@ function setBars(bars) {
 function init() {
   renderControls();
   renderGrid();
-  if (isSong(state.preset)) setScore(findPreset(state.preset).name, findPreset(state.preset).parts);
+  if (isSong(state.preset)) {
+    const p = findPreset(state.preset);
+    setScore(p.name, p.parts, (p.offset ?? 0) + state.sec * GRID_MAX);
+  }
 
   const bind = (id, fn, evt = "change") => $(id).addEventListener(evt, fn);
   bind("#inst", (e) => {
@@ -810,6 +935,7 @@ function init() {
   });
   bind("#preset", (e) => {
     state.preset = e.target.value;
+    state.sec = 0;
     renderPresetInfo();
     save();
   });
@@ -819,11 +945,17 @@ function init() {
     updateDerived();
     save();
   });
-  bind("#apply-preset", () => {
-    const p = findPreset(state.preset);
-    setBars(isSong(p.id) ? [...p.bars] : presetToBars(p, rootPc(state.key), keyPref()));
-    setScore(p.name, isSong(p.id) ? p.parts : null);
-  }, "click");
+  bind("#apply-preset", () => loadSection(state.sec), "click");
+  bind("#section", (e) => {
+    const sec = Number(e.target.value);
+    const here = sourceBars().slice(state.sec * GRID_MAX, (state.sec + 1) * GRID_MAX).map((b) => b.trim());
+    const dirty = state.bars.some((b, i) => b.trim() !== (here[i] ?? ""));
+    if (dirty && !window.confirm("Tu as modifié la grille : la remplacer par cette section ?")) {
+      e.target.value = String(state.sec);
+      return;
+    }
+    loadSection(sec);
+  });
   initSongs();
   bind(
     "#tempo",
@@ -843,8 +975,8 @@ function init() {
   bind("#play", () => playGrid(), "click");
 
   bind("#add-bars", () => {
-    if (state.bars.length >= 64) return;
-    state.bars = [...state.bars, "", "", "", ""].slice(0, 64);
+    if (state.bars.length >= GRID_MAX) return;
+    state.bars = [...state.bars, "", "", "", ""].slice(0, GRID_MAX);
     renderGrid();
     save();
   }, "click");
@@ -877,7 +1009,7 @@ function init() {
     if (chip) select(Number(chip.dataset.bar), Number(chip.dataset.idx));
   });
 
-  $("#score-panel").addEventListener("change", (e) => {
+  const onScoreChange = (e) => {
     if (!score) return;
     if (e.target.id === "score-view-part") {
       score.view = Number(e.target.value);
@@ -888,14 +1020,15 @@ function init() {
       select(sel.bar, sel.idx);
     } else if (e.target.id === "score-adapt") score.adapt = e.target.checked;
     else if (e.target.id === "score-echo") score.echo = e.target.checked;
-  });
-  $("#score-panel").addEventListener("click", (e) => {
+  };
+  const onScoreClick = (e) => {
+    if (e.target.id === "play2") return playGrid();
     const hit = e.target.closest("[data-bar]");
     if (hit && score) return select(Number(hit.dataset.bar), 0);
     const page = e.target.closest("[data-page]");
     if (page && score) {
-      const next = Math.floor(sel.bar / VIEW_BARS) * VIEW_BARS + Number(page.dataset.page) * VIEW_BARS;
-      return select(Math.max(0, Math.min(next, Math.max(score.bars, state.bars.length) - 1)), 0);
+      const next = viewFrom + Number(page.dataset.page) * VIEW_BARS;
+      return select(Math.max(0, Math.min(next, state.bars.length - 1)), 0);
     }
     const guess = e.target.closest("[data-guess]");
     if (guess && score) {
@@ -906,8 +1039,8 @@ function init() {
     }
     if (e.target.id === "score-guess" && score) {
       if (state.bars.some((b) => b.trim()) && !window.confirm("Remplacer les accords actuels de la grille par ceux déduits des notes ?")) return;
-      const n = Math.min(64, Math.max(score.bars, state.bars.length));
-      const bars = guessBars(score.parts, n, accPref());
+      const n = Math.min(GRID_MAX, Math.ceil(Math.max(1, score.bars - score.offset) / 4) * 4);
+      const bars = guessBars(score.parts, n, accPref(), score.offset);
       if (!bars.some(Boolean)) return songStatus("Pas assez de notes pour deviner des accords.", true);
       setBars(bars);
       songStatus(`Grille déduite des notes : ${bars.filter(Boolean).length} mesures remplies. Vérifie à l'oreille (▶) et corrige ; clique « Enregistrer la grille » pour la garder.`);
@@ -919,7 +1052,11 @@ function init() {
       renderScore();
       select(sel.bar, sel.idx);
     }
-  });
+  };
+  $("#score-panel").addEventListener("change", onScoreChange);
+  $("#score-panel").addEventListener("click", onScoreClick);
+  $("#follow").addEventListener("change", onScoreChange);
+  $("#follow").addEventListener("click", onScoreClick);
 
   $("#detail").addEventListener("click", (e) => {
     const tab = e.target.closest("[data-scale]");
@@ -944,7 +1081,7 @@ function init() {
         const an = score.analysis[score.model];
         if (score.adapt && an) style = styleFromAnalysis(an, instrument().range);
         if (score.echo && modelPart()) {
-          const rhythm = rhythmFromNotes(notesIn(modelPart(), sel.bar * 4, sel.bar * 4 + 4), sel.bar * 4);
+          const rhythm = rhythmFromNotes(notesIn(modelPart(), absBar(sel.bar) * 4, absBar(sel.bar) * 4 + 4), absBar(sel.bar) * 4);
           if (rhythm) style.rhythm = rhythm;
         }
       }

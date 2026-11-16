@@ -46,6 +46,10 @@
           <span>Tonalité (réelle)</span>
           <select id="key"></select>
         </label>
+        <label class="field narrow" id="section-field" hidden>
+          <span>Section (16 mesures)</span>
+          <select id="section"></select>
+        </label>
         <button type="button" id="apply-preset" class="secondary">Charger la grille</button>
       </div>
       <p id="preset-info" class="hint"></p>
@@ -59,14 +63,14 @@
       <p id="song-status" class="hint" aria-live="polite"></p>
       <details class="explain">
         <summary>Quels fichiers puis-je importer ?</summary>
-        <p><strong>MuseScore</strong> (<code>.mscz</code>, <code>.mscx</code>), <strong>MusicXML</strong> (<code>.musicxml</code>, <code>.xml</code>, <code>.mxl</code>) ou un <strong>fichier texte</strong> d'accords. Les <em>symboles d'accords</em> remplissent la grille, et les <em>notes de chaque instrument</em> sont analysées (tessiture, mouvement, rythme, activité) pour orienter les phrases proposées. Sans symboles d'accords, la grille reste vide : tape les accords toi-même, l'analyse des notes marche quand même. Dans MuseScore, ajoute-les avec <kbd>Ctrl</kbd>+<kbd>K</kbd>. Mesures en 4/4, 4 accords par mesure, 64 mesures au maximum. Le fichier est lu dans ton navigateur et n'est jamais envoyé.</p>
+        <p><strong>MuseScore</strong> (<code>.mscz</code>, <code>.mscx</code>), <strong>MusicXML</strong> (<code>.musicxml</code>, <code>.xml</code>, <code>.mxl</code>) ou un <strong>fichier texte</strong> d'accords. Les <em>symboles d'accords</em> remplissent la grille, et les <em>notes de chaque instrument</em> sont analysées (tessiture, mouvement, rythme, activité) pour orienter les phrases proposées. Sans symboles d'accords, la grille reste vide : tape les accords toi-même, l'analyse des notes marche quand même. Dans MuseScore, ajoute-les avec <kbd>Ctrl</kbd>+<kbd>K</kbd>. Mesures en 4/4, 4 accords par mesure. Le fichier est lu jusqu'à 64 mesures, mais la grille n'en montre que 16 à la fois (choisis la « Section » pour la suite). Le fichier est lu dans ton navigateur et n'est jamais envoyé.</p>
         <p>Tes morceaux sont gardés dans ce navigateur uniquement (menu « Grille type » → « Mes morceaux »).</p>
       </details>
       <div id="score-panel" class="score-panel" hidden></div>
     </section>
 
     <section class="panel" aria-labelledby="h-grid">
-      <h2 id="h-grid">2. La grille <small>(<span id="bar-count">12</span> mesures)</small></h2>
+      <h2 id="h-grid">2. La grille <small>(<span id="bar-count">12</span> mesures, 16 au maximum)</small></h2>
       <p class="hint">Un ou deux accords par mesure, séparés par un espace&nbsp;: <code>Dm7 G7</code>. Un <code>%</code> répète l'accord précédent. Types reconnus&nbsp;: <code>C</code> <code>Cm</code> <code>C7</code> <code>Cmaj7</code> <code>Cm7</code> <code>Cm7b5</code> <code>Cdim7</code> <code>C7b9</code> <code>C6</code> <code>Cm6</code>. Tu peux aussi écrire <code>Do</code>, <code>Rém7</code>, <code>Sol7</code>, <code>Sib</code>… Les accords que tu tapes sont en <strong>sons réels</strong> (concert) ; sous chaque mesure tu lis l'accord <strong>tel qu'il s'écrit pour toi</strong> et la gamme conseillée.</p>
       <div id="grid" class="grid"></div>
       <div class="transport">
@@ -88,8 +92,13 @@
       </div>
     </section>
 
-    <section class="panel" aria-labelledby="h-detail">
-      <h2 id="h-detail">3. Un accord en détail</h2>
+    <section class="panel" id="follow" aria-labelledby="h-follow" hidden>
+      <h2 id="h-follow">3. La partition à suivre</h2>
+      <div id="score-view"></div>
+    </section>
+
+    <section class="panel" id="detail-panel" aria-labelledby="h-detail">
+      <h2 id="h-detail">4. Un accord en détail</h2>
       <div id="detail" aria-live="polite"></div>
       <details class="explain">
         <summary>C'est quoi « Mixolydien », « Dorien »… ?</summary>
@@ -107,7 +116,7 @@
     </section>
 
     <section class="panel" id="midi-panel" aria-labelledby="h-midi">
-      <h2 id="h-midi">4. Clavier MIDI</h2>
+      <h2 id="h-midi">5. Clavier MIDI</h2>
       <p class="hint">Branche ton clavier en USB, clique « Connecter » et autorise l'accès. Chaque note que tu joues s'affiche <strong>telle que tu la lis sur ta partition</strong> (transposée), avec un verdict : note de l'accord, note de gamme ou hors gamme, selon l'accord en cours. Fonctionne avec Chrome, Edge et Opera ; rien n'est envoyé hors de ton navigateur.</p>
       <div class="controls">
         <button type="button" id="midi-connect">🎹 Connecter mon clavier</button>
@@ -119,7 +128,7 @@
     </section>
 
     <section class="panel" aria-labelledby="h-test">
-      <h2 id="h-test">5. Mode test</h2>
+      <h2 id="h-test">6. Mode test</h2>
       <div class="tabs" role="tablist" aria-label="Type de test">
         <button type="button" role="tab" class="tab" data-mode="quiz" aria-selected="true">Quiz</button>
         <button type="button" role="tab" class="tab" data-mode="improv" aria-selected="false">Test d'impro (clavier)</button>

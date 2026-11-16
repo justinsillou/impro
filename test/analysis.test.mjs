@@ -67,3 +67,11 @@ test("accords déduits : dominante, mineur 7, split de mesure", () => {
   const part = { name: "x", notes: [n(38, 0, 2), n(62, 0), n(65, 1), n(43, 2, 2), n(59, 2), n(62, 3), n(65, 3.5, 0.5)] };
   assert.deepEqual(guessBars([part], 2), ["Dm G7", ""]);
 });
+
+test("guessBars : une section démarre à la mesure `start` du morceau", () => {
+  const n = (t, m) => ({ t, m, d: 1 });
+  // mesure 0 : Do majeur ; mesure 2 : Sol majeur
+  const part = { name: "x", notes: [n(0, 60), n(1, 64), n(2, 67), n(3, 60), n(8, 67), n(9, 71), n(10, 74), n(11, 67)] };
+  assert.equal(guessBars([part], 1, undefined, 2)[0], "G");
+  assert.equal(guessBars([part], 1)[0], "C");
+});

@@ -179,8 +179,13 @@ export function phraseSvg(events, clef, nameStyle = "fr") {
  * @param opts   { selected, nameStyle }
  * Les mesures portent `data-bar` pour pouvoir être cliquées.
  */
+export const SCORE_BAR_W = 210;
+export const SCORE_LEFT = LEFT;
+/** Abscisse (px) d'un instant (`beat` de 0 à 4) dans la i-ème mesure d'une ligne de `scoreSvg`. */
+export const scoreX = (i, beat) => LEFT + i * SCORE_BAR_W + 18 + (beat / 4) * (SCORE_BAR_W - 36);
+
 export function scoreSvg(bars, clef, opts = {}) {
-  const BAR_W = 210;
+  const BAR_W = SCORE_BAR_W;
   const ds = bars.flatMap((b) => b.notes.map((x) => diatonicIndex(x.note)));
   const f = frame(clef, ds.length ? ds : [BOTTOM_LINE[clef]], bars.length * BAR_W - 40);
   const parts = f.parts;
@@ -194,6 +199,7 @@ export function scoreSvg(bars, clef, opts = {}) {
 
   bars.forEach((b, i) => {
     const x0 = LEFT + i * BAR_W;
+    parts.push(`<rect class="bar-bg${opts.playing === b.n ? " playing" : ""}" data-n="${b.n}" x="${x0}" y="1" width="${BAR_W}" height="${ext - 2}"/>`);
     if (opts.selected === b.n) parts.push(`<rect class="bar-sel" x="${x0}" y="1" width="${BAR_W}" height="${ext - 2}" rx="4"/>`);
     parts.push(`<line class="staff-line" x1="${x0 + BAR_W}" x2="${x0 + BAR_W}" y1="${f.top}" y2="${f.bottomY}"/>`);
     parts.push(label(x0 + 4, 12, String(b.n + 1), "barno"));

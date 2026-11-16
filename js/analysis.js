@@ -202,19 +202,20 @@ export function chordCandidates(notes, pref, count = 3) {
  * Grille déduite d'une partition : une chaîne par mesure (un accord, ou deux
  * si la mesure change d'harmonie à mi-chemin ; vide s'il n'y a aucune note).
  */
-export function guessBars(parts, totalBars, pref) {
+export function guessBars(parts, totalBars, pref, start = 0) {
   const all = parts.flatMap((p) => p.notes);
   const win = (a, b) => all.filter((n) => n.t >= a && n.t < b);
   const bars = [];
   for (let b = 0; b < totalBars; b++) {
-    const whole = win(b * 4, b * 4 + 4);
+    const at = (start + b) * 4;
+    const whole = win(at, at + 4);
     const [best] = chordCandidates(whole, pref, 1);
     if (!best) {
       bars.push("");
       continue;
     }
-    const h1 = win(b * 4, b * 4 + 2);
-    const h2 = win(b * 4 + 2, b * 4 + 4);
+    const h1 = win(at, at + 2);
+    const h2 = win(at + 2, at + 4);
     const [c1] = chordCandidates(h1, pref, 1);
     const [c2] = chordCandidates(h2, pref, 1);
     const split = h1.length >= 2 && h2.length >= 2 && c1.name !== c2.name && (c1.score + c2.score) / 2 > best.score + 0.2;
