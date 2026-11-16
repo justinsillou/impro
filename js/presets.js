@@ -13,6 +13,8 @@ const IV = (q = "") => [5, q];
 const V = (q = "7") => [7, q];
 const VI = (q = "m7") => [9, q];
 const VII = (q = "m7b5") => [11, q];
+// degrés altérés (en demi-tons au-dessus de la tonique)
+const bVI = (q = "7") => [8, q];
 
 export const PRESETS = [
   {
@@ -57,6 +59,48 @@ export const PRESETS = [
     ],
   },
   {
+    id: "autumn-leaves",
+    name: "Les feuilles mortes (Autumn Leaves, 32 mesures)",
+    info: "Forme AABC du standard. Tonique = la tonalité majeure relative (Sib pour sol mineur) : la grille est écrite en degrés, donc choisis Sib pour la version habituelle. Mineur sur le VI.",
+    bars: [
+      [II()], [V()], [I("maj7")], [IV("maj7")], [VII()], [III("7b9")], [VI("m")], [VI("m")],
+      [II()], [V()], [I("maj7")], [IV("maj7")], [VII()], [III("7b9")], [VI("m")], [VI("m")],
+      [VII()], [III("7b9")], [VI("m")], [VI("m")], [II()], [V()], [I("maj7")], [IV("maj7")],
+      [II()], [V()], [I("maj7")], [IV("maj7")], [VII()], [III("7b9")], [VI("m")], [VI("m")],
+    ],
+  },
+  {
+    id: "rhythm-changes",
+    name: "Rhythm changes (I Got Rhythm, 32 mesures)",
+    info: "AABA : trois fois la même grille de 8 mesures (I–VI–II–V), et un pont de dominantes qui montent par quartes (III7–VI7–II7–V7). Classique des jam sessions.",
+    bars: [
+      [I("6"), VI("7")], [II(), V()], [III(), VI("7")], [II(), V()],
+      [I("7")], [IV("7")], [I("6"), VI("7")], [II(), V()],
+      [I("6"), VI("7")], [II(), V()], [III(), VI("7")], [II(), V()],
+      [I("7")], [IV("7")], [I("6")], [I("6")],
+      [III("7")], [III("7")], [VI("7")], [VI("7")],
+      [II("7")], [II("7")], [V("7")], [V("7")],
+      [I("6"), VI("7")], [II(), V()], [III(), VI("7")], [II(), V()],
+      [I("7")], [IV("7")], [I("6")], [I("6")],
+    ],
+  },
+  {
+    id: "blues-minor",
+    name: "Blues mineur (12 mesures)",
+    info: "Même forme que le blues, mais en mineur : Im7 – IVm7 – ♭VI7 – V7♭9. La pentatonique mineure ou le dorien passent sur les accords mineurs.",
+    bars: [
+      [I("m7")], [I("m7")], [I("m7")], [I("m7")],
+      [IV("m7")], [IV("m7")], [I("m7")], [I("m7")],
+      [bVI("7")], [V("7b9")], [I("m7")], [V("7b9")],
+    ],
+  },
+  {
+    id: "pop",
+    name: "Pop (I–V–VI–IV)",
+    info: "Les quatre accords de centaines de chansons pop. Gamme majeure ou pentatonique majeure sur tout, ou pentatonique mineure sur le VIm.",
+    bars: [[I()], [V("")], [VI("m")], [IV()]],
+  },
+  {
     id: "anatole",
     name: "Anatole (I–VI–II–V)",
     info: "La boucle qui sert de base à des centaines de standards. 4 mesures, à répéter.",
@@ -74,11 +118,11 @@ export const PRESETS = [
 ];
 
 /** Transpose un preset dans une tonalité (pc de la tonique) -> liste de mesures en texte. */
-export function presetToBars(preset, tonicPc) {
+export function presetToBars(preset, tonicPc, pref) {
   return preset.bars.map((chords) =>
     chords
       .map(([semis, quality]) => {
-        const root = spellRoot((tonicPc + semis) % 12, quality);
+        const root = spellRoot((tonicPc + semis) % 12, quality, pref);
         const acc = root.acc === 1 ? "#" : root.acc === -1 ? "b" : "";
         return LETTERS[root.letter] + acc + QUALITIES[quality].symbol.replace("♭", "b");
       })

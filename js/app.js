@@ -8,12 +8,14 @@ import { Engine } from "./audio.js";
 import { MidiIn } from "./midi.js";
 import { download, midiFile, musicXml } from "./export.js";
 import { initTestUi } from "./test-ui.js";
+import { importFile, parseChordText } from "./import.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 const STORAGE_KEY = "impro-grille-v1";
+const SONGS_KEY = "impro-morceaux-v1";
 const REPEAT = new Set(["%", "/", "-", "."]);
 const engine = new Engine();
 const midiIn = new MidiIn();
@@ -22,10 +24,34 @@ const midiIn = new MidiIn();
 
 const rootPc = (name) => parseChord(name).pc;
 
+/* Morceaux de l'utilisateur (importés ou enregistrés), gardés dans le navigateur. */
+function loadSongs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SONGS_KEY) ?? "[]");
+    return (Array.isArray(raw) ? raw : [])
+      .filter((x) => x && typeof x.id === "string" && typeof x.name === "string" && Array.isArray(x.bars))
+      .map((x) => ({ id: x.id, name: x.name.slice(0, 80), bars: x.bars.slice(0, 64).map((b) => String(b).slice(0, 40)) }))
+      .filter((x) => x.bars.length);
+  } catch {
+    return [];
+  }
+}
+let songs = loadSongs();
+const saveSongs = () => {
+  try {
+    localStorage.setItem(SONGS_KEY, JSON.stringify(songs));
+  } catch {
+    /* stockage plein ou bloqué */
+  }
+};
+const findPreset = (id) => PRESETS.find((p) => p.id === id) ?? songs.find((x) => x.id === id);
+const isSong = (id) => songs.some((x) => x.id === id);
+
 const DEFAULT = {
   bars: presetToBars(PRESETS[0], 0),
   inst: "bb-bass",
   names: "fr",
+  acc: "auto",
   tempo: 100,
   key: "C",
   preset: PRESETS[0].id,
@@ -44,9 +70,10 @@ function sanitize(raw) {
   }
   if (INSTRUMENTS.some((i) => i.id === raw.inst)) s.inst = raw.inst;
   if (raw.names === "fr" || raw.names === "en") s.names = raw.names;
+  if (["auto", "sharp", "flat"].includes(raw.acc)) s.acc = raw.acc;
   if (Number.isFinite(raw.tempo)) s.tempo = Math.min(220, Math.max(40, Math.round(raw.tempo)));
   if (ROOT_CHOICES.includes(raw.key)) s.key = raw.key;
-  if (PRESETS.some((p) => p.id === raw.preset)) s.preset = raw.preset;
+  if (findPreset(raw.preset)) s.preset = raw.preset;
   for (const k of ["loop", "click", "swing", "drums"]) if (typeof raw[k] === "boolean") s[k] = raw[k];
   return s;
 }
@@ -102,6 +129,11 @@ function save() {
 
 const instrument = () => instrumentById(state.inst);
 
+/** Orthographe imposée : "sharp", "flat", ou rien (on suit ce que l'utilisateur a tapé). */
+const accPref = () => (state.acc === "sharp" || state.acc === "flat" ? state.acc : undefined);
+/** Pour une grille type : « auto » suit la tonalité (Sol♭ → bémols, Fa♯ → dièses). */
+const keyPref = () => accPref() ?? (state.key.includes("#") ? "sharp" : state.key.includes("b") ? "flat" : undefined);
+
 /** Découpe une mesure en accords et leur durée en temps (4/4). */
 function resolveGrid() {
   const inst = instrument();
@@ -114,7 +146,7 @@ function resolveGrid() {
     return tokens.map((tok, i) => {
       let a;
       if (REPEAT.has(tok)) a = prev;
-      else a = analyseChord(tok, inst);
+      else a = analyseChord(tok, inst, accPref());
       if (a) prev = a;
       return { text: tok, beats: beats[i], a, implicit, invalid: !REPEAT.has(tok) && !a };
     });
@@ -131,15 +163,32 @@ const selectedItem = (resolved = resolveGrid()) => {
 function renderControls() {
   $("#inst").innerHTML = INSTRUMENTS.map((i) => `<option value="${i.id}">${esc(i.label)}</option>`).join("");
   $("#inst").value = state.inst;
-  $("#key").innerHTML = ROOT_CHOICES.map((r) => `<option>${r}</option>`).join("");
+  $("#key").innerHTML = ROOT_CHOICES.map((r) => `<option value="${r}">${r.replace("#", "♯").replace("b", "♭")}</option>`).join("");
   $("#key").value = state.key;
-  $("#preset").innerHTML = PRESETS.map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
-  $("#preset").value = state.preset;
+  renderPresets();
   $("#names").value = state.names;
+  $("#acc").value = state.acc;
   $("#tempo").value = state.tempo;
   $("#tempo-out").textContent = state.tempo;
   for (const k of ["loop", "click", "swing", "drums"]) $("#" + k).checked = state[k];
-  $("#preset-info").textContent = PRESETS.find((p) => p.id === state.preset).info;
+  renderPresetInfo();
+}
+
+function renderPresets() {
+  const opt = (p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`;
+  $("#preset").innerHTML =
+    `<optgroup label="Grilles types">${PRESETS.map(opt).join("")}</optgroup>` +
+    (songs.length ? `<optgroup label="Mes morceaux">${songs.map(opt).join("")}</optgroup>` : "");
+  $("#preset").value = state.preset;
+}
+
+function renderPresetInfo() {
+  const p = findPreset(state.preset);
+  $("#preset-info").textContent = isSong(state.preset)
+    ? `Ton morceau « ${p.name} » : ${p.bars.length} mesures, accords en sons réels (la tonalité ne les change pas).`
+    : p.info;
+  $("#delete-song").hidden = !isSong(state.preset);
+  $("#key").disabled = isSong(state.preset);
 }
 
 function renderGrid() {
@@ -463,6 +512,72 @@ function exportPhraseXml() {
   download("phrase-impro.musicxml", musicXml({ title: "Phrase d'impro", inst, measures: [{ entries }] }), "application/vnd.recordare.musicxml+xml");
 }
 
+/* -------------------------------------------------- morceaux de l'utilisateur */
+
+function songStatus(msg, error = false) {
+  const el = $("#song-status");
+  el.textContent = msg;
+  el.classList.toggle("error", error);
+}
+
+/** Enregistre une grille dans « Mes morceaux » et la sélectionne. */
+function addSong(name, bars) {
+  const id = "song-" + Date.now().toString(36);
+  songs.push({ id, name: name.trim().slice(0, 80) || "Sans titre", bars: bars.slice(0, 64) });
+  saveSongs();
+  state.preset = id;
+  renderPresets();
+  renderPresetInfo();
+  save();
+}
+
+function initSongs() {
+  $("#import-btn").addEventListener("click", () => $("#import-file").click());
+  $("#import-file").addEventListener("change", async (e) => {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const { bars, skipped, title } = await importFile(file);
+      setBars(bars);
+      addSong(title, bars);
+      songStatus(
+        `« ${title} » importé : ${bars.length} mesures` + (skipped ? ` (${skipped} accord(s) non reconnu(s) ignoré(s))` : "") +
+          ". Les accords sont lus en sons réels ; corrige à la main si besoin.",
+      );
+    } catch (err) {
+      songStatus(err.message || "Import impossible.", true);
+    }
+  });
+  $("#save-song").addEventListener("click", () => {
+    const bars = state.bars.map((b) => b.trim());
+    if (!bars.some(Boolean)) return songStatus("La grille est vide.", true);
+    const name = window.prompt("Nom du morceau :", "Mon morceau");
+    if (name === null) return;
+    addSong(name, bars);
+    songStatus(`« ${name.trim() || "Sans titre"} » enregistré dans « Mes morceaux » (dans ce navigateur).`);
+  });
+  $("#paste-song").addEventListener("click", () => {
+    const text = window.prompt("Colle tes accords (mesures séparées par | ou par des retours à la ligne) :", "Dm7 G7 | Cmaj7 | Am7 D7 | Gmaj7");
+    if (!text) return;
+    const { bars, skipped } = parseChordText(text);
+    if (!bars.length) return songStatus("Aucun accord reconnu.", true);
+    setBars(bars);
+    songStatus(`${bars.length} mesures chargées` + (skipped ? ` (${skipped} élément(s) ignoré(s))` : "") + ". Clique « Enregistrer » pour les garder.");
+  });
+  $("#delete-song").addEventListener("click", () => {
+    const p = findPreset(state.preset);
+    if (!isSong(p.id) || !window.confirm(`Supprimer « ${p.name} » de tes morceaux ?`)) return;
+    songs = songs.filter((x) => x.id !== p.id);
+    saveSongs();
+    state.preset = PRESETS[0].id;
+    renderPresets();
+    renderPresetInfo();
+    save();
+    songStatus("Morceau supprimé.");
+  });
+}
+
 /* ------------------------------------------------------------ évènements */
 
 function setBars(bars) {
@@ -498,10 +613,20 @@ function init() {
   });
   bind("#preset", (e) => {
     state.preset = e.target.value;
-    $("#preset-info").textContent = PRESETS.find((p) => p.id === state.preset).info;
+    renderPresetInfo();
     save();
   });
-  bind("#apply-preset", () => setBars(presetToBars(PRESETS.find((p) => p.id === state.preset), rootPc(state.key))), "click");
+  bind("#acc", (e) => {
+    state.acc = e.target.value;
+    phrase = null;
+    updateDerived();
+    save();
+  });
+  bind("#apply-preset", () => {
+    const p = findPreset(state.preset);
+    setBars(isSong(p.id) ? [...p.bars] : presetToBars(p, rootPc(state.key), keyPref()));
+  }, "click");
+  initSongs();
   bind(
     "#tempo",
     (e) => {

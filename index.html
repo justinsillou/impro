@@ -28,6 +28,14 @@
             <option value="en">C D E</option>
           </select>
         </label>
+        <label class="field narrow">
+          <span>Altérations</span>
+          <select id="acc" title="Comment écrire les notes altérées : Do♯ ou Ré♭ ?">
+            <option value="auto">Auto (comme je tape)</option>
+            <option value="sharp">Dièses ♯</option>
+            <option value="flat">Bémols ♭</option>
+          </select>
+        </label>
       </div>
       <div class="controls">
         <label class="field">
@@ -41,6 +49,19 @@
         <button type="button" id="apply-preset" class="secondary">Charger la grille</button>
       </div>
       <p id="preset-info" class="hint"></p>
+      <div class="controls songs">
+        <button type="button" id="import-btn" class="secondary">📂 Importer un morceau</button>
+        <input type="file" id="import-file" hidden accept=".mscz,.mscx,.musicxml,.xml,.mxl,.txt">
+        <button type="button" id="paste-song" class="secondary">📋 Coller des accords</button>
+        <button type="button" id="save-song" class="secondary">💾 Enregistrer la grille</button>
+        <button type="button" id="delete-song" class="secondary" hidden>🗑 Supprimer ce morceau</button>
+      </div>
+      <p id="song-status" class="hint" aria-live="polite"></p>
+      <details class="explain">
+        <summary>Quels fichiers puis-je importer ?</summary>
+        <p><strong>MuseScore</strong> (<code>.mscz</code>, <code>.mscx</code>), <strong>MusicXML</strong> (<code>.musicxml</code>, <code>.xml</code>, <code>.mxl</code>) ou un <strong>fichier texte</strong> d'accords. Seuls les <em>chiffrages d'accords</em> de la partition sont lus (pas les notes) : une partition sans symboles d'accords ne donnera rien. Dans MuseScore, ajoute-les avec <kbd>Ctrl</kbd>+<kbd>K</kbd>. Mesures en 4/4, 4 accords par mesure, 64 mesures au maximum. Le fichier est lu dans ton navigateur et n'est jamais envoyé.</p>
+        <p>Tes morceaux sont gardés dans ce navigateur uniquement (menu « Grille type » → « Mes morceaux »).</p>
+      </details>
     </section>
 
     <section class="panel" aria-labelledby="h-grid">

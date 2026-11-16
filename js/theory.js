@@ -42,12 +42,19 @@ export function diatonicIndex(n) {
 /** Nom préféré d'une fondamentale, selon le numéro de demi-ton. */
 const ROOTS_MAJOR = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"];
 const ROOTS_MINOR = ["C", "C#", "D", "Eb", "E", "F", "F#", "G", "G#", "A", "Bb", "B"];
-export const ROOT_CHOICES = ROOTS_MAJOR;
+const ROOTS_SHARP = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const ROOTS_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+/** Tonalités proposées (les deux orthographes des notes altérées). */
+export const ROOT_CHOICES = ["C", "C#", "Db", "D", "D#", "Eb", "E", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B"];
 
 const MINORISH = new Set(["m", "m7", "m7b5", "dim7", "m6"]);
 
-export function spellRoot(pc, quality) {
-  const table = MINORISH.has(quality) ? ROOTS_MINOR : ROOTS_MAJOR;
+/**
+ * Orthographe d'une fondamentale. `pref` : "sharp" (♯), "flat" (♭) ou rien
+ * (choix automatique : bémols, sauf Do♯ Mi♭… selon le type d'accord).
+ */
+export function spellRoot(pc, quality, pref) {
+  const table = pref === "sharp" ? ROOTS_SHARP : pref === "flat" ? ROOTS_FLAT : MINORISH.has(quality) ? ROOTS_MINOR : ROOTS_MAJOR;
   const name = table[((pc % 12) + 12) % 12];
   return {
     letter: LETTERS.indexOf(name[0]),
@@ -212,13 +219,15 @@ export function soundingMidi(writtenNote, inst) {
  * Tout ce qu'il faut savoir sur un accord, pour un instrument donné.
  * Les noms et gammes sont donnés tels qu'ils s'ÉCRIVENT sur la partition.
  */
-export function analyseChord(text, inst) {
+export function analyseChord(text, inst, pref) {
   const c = parseChord(text);
   if (!c) return null;
   const def = QUALITIES[c.quality];
+  // sans choix imposé, on respecte l'altération tapée (C#m7 → ♯, Bb7 → ♭)
+  const p = pref ?? (c.acc > 0 ? "sharp" : c.acc < 0 ? "flat" : undefined);
   const writtenPc = (c.pc + inst.semis) % 12;
-  const writtenRoot = placeRoot(spellRoot(writtenPc, c.quality), inst.low);
-  const concertRoot = spellRoot(c.pc, c.quality);
+  const writtenRoot = placeRoot(spellRoot(writtenPc, c.quality, p), inst.low);
+  const concertRoot = spellRoot(c.pc, c.quality, p);
   return {
     parsed: c,
     quality: c.quality,
