@@ -191,12 +191,12 @@ export function chordSymbol(root, quality, style = "en") {
  * `low`   : MIDI de la note la plus grave où l'on place la fondamentale écrite.
  */
 export const INSTRUMENTS = [
-  { id: "bb-bass", label: "Sib grave, clé de sol — saxhorn basse, euphonium, baryton, sax ténor", short: "Sib grave (clé de sol)", semis: 14, clef: "treble", low: 55 },
-  { id: "bass-fa", label: "Clé de fa, non transposé — tuba, trombone, saxhorn basse en « ut »", short: "Clé de fa (non transposé)", semis: 0, clef: "bass", low: 40 },
-  { id: "bb", label: "Sib — trompette, clarinette, sax soprano", short: "Sib (trompette, clarinette)", semis: 2, clef: "treble", low: 60 },
-  { id: "eb", label: "Mib — sax alto", short: "Mib (sax alto)", semis: 9, clef: "treble", low: 60 },
-  { id: "f", label: "Fa — cor d'harmonie", short: "Fa (cor)", semis: 7, clef: "treble", low: 60 },
-  { id: "c", label: "Do, clé de sol — flûte, violon, hautbois, piano", short: "Do (instruments en ut)", semis: 0, clef: "treble", low: 60 },
+  { id: "bb-bass", label: "Sib grave, clé de sol — saxhorn basse, euphonium, baryton, sax ténor", short: "Sib grave (clé de sol)", semis: 14, clef: "treble", low: 55, range: [42, 79] },
+  { id: "bass-fa", label: "Clé de fa, non transposé — tuba, trombone, saxhorn basse en « ut »", short: "Clé de fa (non transposé)", semis: 0, clef: "bass", low: 40, range: [28, 65] },
+  { id: "bb", label: "Sib — trompette, clarinette, sax soprano", short: "Sib (trompette, clarinette)", semis: 2, clef: "treble", low: 60, range: [52, 84] },
+  { id: "eb", label: "Mib — sax alto", short: "Mib (sax alto)", semis: 9, clef: "treble", low: 60, range: [58, 89] },
+  { id: "f", label: "Fa — cor d'harmonie", short: "Fa (cor)", semis: 7, clef: "treble", low: 60, range: [47, 77] },
+  { id: "c", label: "Do, clé de sol — flûte, violon, hautbois, piano", short: "Do (instruments en ut)", semis: 0, clef: "treble", low: 60, range: [59, 96] },
 ];
 
 export function instrumentById(id) {
@@ -239,42 +239,94 @@ export function analyseChord(text, inst) {
   };
 }
 
+/* ---------- Tessiture ---------- */
+
+/** Note dans la tessiture approximative de l'instrument (notes écrites) ? */
+export function inRange(note, inst) {
+  const m = midiOf(note);
+  return m >= inst.range[0] && m <= inst.range[1];
+}
+
+/* ---------- Notes à partir d'un numéro MIDI ---------- */
+
+/** Écriture « par défaut » d'une hauteur MIDI (bémols, sauf Fa♯). */
+export function noteFromMidi(m) {
+  const name = ROOTS_MAJOR[((m % 12) + 12) % 12];
+  return makeNote(
+    LETTERS.indexOf(name[0]),
+    name[1] === "#" ? 1 : name[1] === "b" ? -1 : 0,
+    Math.floor(m / 12) - 1,
+  );
+}
+
 /* ---------- Phrase d'impro ---------- */
 
+/** Découpages d'une mesure de 4 temps en croches (1 = croche, 2 = noire, 3 = noire pointée). */
+export const RHYTHMS = [
+  [1, 1, 1, 1, 1, 1, 1, 1],
+  [2, 1, 1, 2, 1, 1],
+  [1, 1, 2, 1, 1, 2],
+  [2, 2, 1, 1, 1, 1],
+  [3, 1, 2, 2],
+  [1, 2, 2, 1, 2],
+  [2, 1, 1, 1, 1, 2],
+  [1, 1, 1, 1, 2, 2],
+  [3, 1, 1, 1, 2],
+  [2, 2, 2, 2],
+];
+
 /**
- * Propose une phrase de 8 croches : notes de l'accord sur les temps,
- * notes de la gamme entre les deux. Ce n'est PAS de la musique géniale :
- * c'est un point de départ à jouer, déformer, rejeter.
+ * Propose une phrase d'une mesure : un rythme, des notes d'accord sur les
+ * temps, des notes de la gamme entre les deux, parfois un silence.
+ * Résultat : [{ note | null (silence), start, len }] en croches.
+ * Ce n'est PAS de la musique géniale : c'est un point de départ à jouer,
+ * déformer, rejeter.
+ *
+ * `range` (MIDI écrit) borne les notes à la tessiture de l'instrument.
  */
-export function generatePhrase(root, scaleId, toneDegrees, rng = Math.random, length = 8) {
+export function generatePhrase(root, scaleId, toneDegrees, rng = Math.random, range = [0, 127]) {
   const rootMidi = midiOf(root);
-  const pool = scalePool(root, scaleId, rootMidi - 4, rootMidi + 12);
-  const tonePcs = new Set(toneDegrees.map((t) => (midiOf(root) + degreeSemis(t)) % 12));
+  const lo = Math.max(rootMidi - 4, range[0]);
+  const hi = Math.min(rootMidi + 12, range[1]);
+  const pool = scalePool(root, scaleId, lo, hi);
+  const tonePcs = new Set(toneDegrees.map((t) => (rootMidi + degreeSemis(t)) % 12));
   const isTone = (n) => tonePcs.has(midiOf(n) % 12);
-
   const pick = (arr) => arr[Math.floor(rng() * arr.length)];
-  let idx = pool.indexOf(pick(pool.filter(isTone).filter((n) => midiOf(n) <= rootMidi + 7)));
-  let dir = rng() < 0.5 ? 1 : -1;
-  const out = [pool[idx]];
 
-  for (let i = 1; i < length; i++) {
-    if (i % 2 === 0) {
-      // temps : on atterrit sur une note d'accord proche, différente de la précédente
-      const near = pool
-        .map((n, j) => ({ n, j }))
-        .filter(({ n, j }) => isTone(n) && j !== idx && Math.abs(j - idx) <= 3);
-      if (near.length) idx = pick(near).j;
-    } else {
-      if (rng() < 0.3) dir = -dir;
-      const step = rng() < 0.75 ? 1 : 2;
-      let next = idx + dir * step;
-      if (next < 0 || next >= pool.length) {
-        dir = -dir;
-        next = idx + dir * step;
+  const rhythm = pick(RHYTHMS);
+  const starts = rhythm.map((_, k) => rhythm.slice(0, k).reduce((a, b) => a + b, 0));
+
+  const firsts = pool.map((n, j) => ({ n, j })).filter(({ n }) => isTone(n) && midiOf(n) <= rootMidi + 7);
+  let idx = (firsts.length ? pick(firsts) : { j: 0 }).j;
+  let dir = rng() < 0.5 ? 1 : -1;
+  const out = [];
+
+  rhythm.forEach((len, k) => {
+    const start = starts[k];
+    if (k > 0) {
+      if (start % 2 === 0) {
+        // sur le temps : on atterrit sur une note d'accord proche
+        const near = pool
+          .map((n, j) => ({ n, j }))
+          .filter(({ n, j }) => isTone(n) && j !== idx && Math.abs(j - idx) <= 3);
+        if (near.length) idx = pick(near).j;
+      } else {
+        if (rng() < 0.3) dir = -dir;
+        const step = rng() < 0.75 ? 1 : 2;
+        let next = idx + dir * step;
+        if (next < 0 || next >= pool.length) {
+          dir = -dir;
+          next = idx + dir * step;
+        }
+        idx = Math.max(0, Math.min(pool.length - 1, next));
       }
-      idx = Math.max(0, Math.min(pool.length - 1, next));
     }
-    out.push(pool[idx]);
-  }
+    const last = k === rhythm.length - 1;
+    const rest = k > 0 && !last && start % 2 === 1 && rng() < 0.25;
+    out.push({ note: rest ? null : pool[idx], start, len });
+  });
   return out;
 }
+
+/** Les seules notes (sans silences) d'une phrase. */
+export const phraseNotes = (phrase) => phrase.filter((e) => e.note).map((e) => e.note);

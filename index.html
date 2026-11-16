@@ -45,13 +45,15 @@
 
     <section class="panel" aria-labelledby="h-grid">
       <h2 id="h-grid">2. La grille <small>(<span id="bar-count">12</span> mesures)</small></h2>
-      <p class="hint">Un ou deux accords par mesure, séparés par un espace&nbsp;: <code>Dm7 G7</code>. Un <code>%</code> répète l'accord précédent. Types reconnus&nbsp;: <code>C</code> <code>Cm</code> <code>C7</code> <code>Cmaj7</code> <code>Cm7</code> <code>Cm7b5</code> <code>Cdim7</code> <code>C7b9</code> <code>C6</code> <code>Cm6</code>. Les accords que tu tapes sont en <strong>sons réels</strong> (concert) ; sous chaque mesure tu lis l'accord <strong>tel qu'il s'écrit pour toi</strong> et la gamme conseillée.</p>
+      <p class="hint">Un ou deux accords par mesure, séparés par un espace&nbsp;: <code>Dm7 G7</code>. Un <code>%</code> répète l'accord précédent. Types reconnus&nbsp;: <code>C</code> <code>Cm</code> <code>C7</code> <code>Cmaj7</code> <code>Cm7</code> <code>Cm7b5</code> <code>Cdim7</code> <code>C7b9</code> <code>C6</code> <code>Cm6</code>. Tu peux aussi écrire <code>Do</code>, <code>Rém7</code>, <code>Sol7</code>, <code>Sib</code>… Les accords que tu tapes sont en <strong>sons réels</strong> (concert) ; sous chaque mesure tu lis l'accord <strong>tel qu'il s'écrit pour toi</strong> et la gamme conseillée.</p>
       <div id="grid" class="grid"></div>
       <div class="transport">
         <button type="button" id="play" aria-pressed="false">▶ Jouer la grille</button>
         <label class="inline">Tempo <input type="range" id="tempo" min="40" max="220" step="2"> <output id="tempo-out"></output></label>
         <label class="inline"><input type="checkbox" id="loop"> En boucle</label>
         <label class="inline"><input type="checkbox" id="click"> Métronome</label>
+        <label class="inline"><input type="checkbox" id="swing"> Swing</label>
+        <label class="inline"><input type="checkbox" id="drums"> Batterie</label>
       </div>
       <div class="transport tools">
         <button type="button" id="add-bars" class="secondary">+ 4 mesures</button>
@@ -59,6 +61,8 @@
         <button type="button" id="clear" class="secondary">Vider</button>
         <button type="button" id="share" class="secondary">🔗 Copier le lien</button>
         <button type="button" id="print" class="secondary">🖨 Imprimer</button>
+        <button type="button" id="dl-midi" class="secondary">⬇ MIDI</button>
+        <button type="button" id="dl-xml" class="secondary">⬇ MusicXML</button>
       </div>
     </section>
 
@@ -78,6 +82,39 @@
         </ul>
         <p>En pratique : <strong>l'accord te dit quelle gamme prendre</strong>. Pas besoin de connaître le nom, juste de suivre la « recette » affichée sous l'onglet.</p>
       </details>
+    </section>
+
+    <section class="panel" id="midi-panel" aria-labelledby="h-midi">
+      <h2 id="h-midi">4. Clavier MIDI</h2>
+      <p class="hint">Branche ton clavier en USB, clique « Connecter » et autorise l'accès. Chaque note que tu joues s'affiche <strong>telle que tu la lis sur ta partition</strong> (transposée), avec un verdict : note de l'accord, note de gamme ou hors gamme, selon l'accord en cours. Fonctionne avec Chrome, Edge et Opera ; rien n'est envoyé hors de ton navigateur.</p>
+      <div class="controls">
+        <button type="button" id="midi-connect">🎹 Connecter mon clavier</button>
+        <label class="field"><span>Entrée MIDI</span><select id="midi-device"></select></label>
+        <label class="inline"><input type="checkbox" id="midi-monitor" checked> Entendre mes notes</label>
+      </div>
+      <p id="midi-status" class="hint" aria-live="polite"></p>
+      <div id="midi-live" aria-live="polite"></div>
+    </section>
+
+    <section class="panel" aria-labelledby="h-test">
+      <h2 id="h-test">5. Mode test</h2>
+      <div class="tabs" role="tablist" aria-label="Type de test">
+        <button type="button" role="tab" class="tab" data-mode="quiz" aria-selected="true">Quiz</button>
+        <button type="button" role="tab" class="tab" data-mode="improv" aria-selected="false">Test d'impro (clavier)</button>
+      </div>
+      <div id="mode-quiz">
+        <p class="hint">10 questions sur ton instrument : transposition, notes d'accord, lecture, gammes. Pour les réponses « note », tu peux jouer au clavier MIDI.</p>
+        <div class="controls">
+          <label class="field"><span>Thème</span><select id="quiz-type"></select></label>
+          <button type="button" id="quiz-start">Commencer</button>
+        </div>
+        <div id="quiz-box"></div>
+      </div>
+      <div id="mode-improv" hidden>
+        <p class="hint">Un tour de ta grille avec un décompte d'une mesure. Joue ce que tu veux au clavier MIDI : le programme compte les notes d'accord, de gamme et hors gamme, et regarde si tu poses des notes d'accord sur les temps.</p>
+        <div class="controls"><button type="button" id="improv-start">▶ Lancer le test (1 tour)</button></div>
+        <div id="improv-box" aria-live="polite"></div>
+      </div>
     </section>
   </main>
 

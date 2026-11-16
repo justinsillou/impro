@@ -7,6 +7,15 @@ Mini projet lié à l'article de blog *Improviser sur une grille : gammes, trans
 - Démo : https://justinsillou.github.io/impro/
 - JavaScript pur (modules ES), **aucune dépendance, aucune étape de build**.
 
+## Fonctionnalités
+
+- Grille d'accords (4/4), grilles types en degrés, transposition pour Sib, Mib, Fa, clé de fa…
+- Gammes et notes d'accord sur une portée, avec la **tessiture** de l'instrument (notes hors limites en rouge).
+- Phrases d'une mesure avec rythme et silences ; lecture avec basse, accords, métronome, **swing** et **batterie** légère.
+- **Exports** : MIDI et MusicXML (grille ou phrase). Le MusicXML contient l'élément `<transpose>` ; les chiffrages d'accords sont en sons réels.
+- **Clavier MIDI** (Web MIDI : Chrome, Edge, Opera) : la note jouée s'affiche transposée, avec verdict par rapport à l'accord en cours.
+- **Mode test** : quiz de 10 questions (transposition, notes d'accord, lecture, gammes) et test d'improvisation noté au clavier MIDI.
+
 ## Lancer en local
 
 ```bash
@@ -29,7 +38,11 @@ Les tests couvrent la théorie (orthographe des notes, transposition, gammes, an
 | `js/theory.js` | Notes, degrés, gammes, accords, instruments transpositeurs, génération de phrase. Pur, testé. |
 | `js/presets.js` | Grilles types écrites en degrés (blues, II–V–I, Anatole…), plaquées dans la tonalité choisie. |
 | `js/staff.js` | Portée en SVG (clés de sol et de fa, altérations, lignes supplémentaires). |
-| `js/audio.js` | Moteur Web Audio : accords, basse, métronome, boucle. |
+| `js/audio.js` | Moteur Web Audio : accords, basse, batterie, métronome, boucle, notes en direct. |
+| `js/midi.js` | Entrée clavier MIDI (Web MIDI). |
+| `js/export.js` | Fichier MIDI et MusicXML. |
+| `js/quiz.js` | Questions du quiz et notation d'improvisation. Pur, testé. |
+| `js/test-ui.js` | Interface du clavier MIDI et du mode test. |
 | `js/app.js` | Interface et état (sauvegardé dans le navigateur et dans le lien). |
 
 ## Choix et limites

@@ -126,6 +126,15 @@ output { min-width: 2.2em; font-variant-numeric: tabular-nums; }
 .staff-line.ledger { stroke-width: 1.4; }
 .head { fill: var(--staff); }
 .head.tone { fill: var(--accent); }
+.head.out { fill: var(--bad); }
+.stem { stroke: var(--staff); stroke-width: 1.4; }
+.beam { fill: var(--staff); }
+.flag { stroke: var(--staff); stroke-width: 1.6; fill: none; }
+.dotmark { fill: var(--staff); }
+.rest { fill: var(--staff); font-family: "Noto Music", "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", serif; }
+.note-name.out { fill: var(--bad); }
+.dot.out { background: var(--bad); }
+
 .clef, .acc { fill: var(--staff); font-family: "Noto Music", "Segoe UI Symbol", "Apple Symbols", "DejaVu Sans", serif; }
 .acc { font-size: 18px; }
 .note-name { fill: var(--muted); font-size: 12px; font-family: inherit; }
@@ -150,3 +159,25 @@ output { min-width: 2.2em; font-variant-numeric: tabular-nums; }
   .grid { grid-template-columns: repeat(4, 1fr); }
   .bar-input { border: none; background: none; }
 }
+
+/* clavier MIDI et mode test */
+#midi-status.bad { color: var(--bad); }
+#midi-live { min-height: 2rem; }
+.verdict { font-weight: 600; }
+.verdict.ok { color: var(--ok); }
+.verdict.mid { color: var(--accent); }
+.verdict.bad { color: var(--bad); }
+.q-progress { color: var(--muted); font-size: .85rem; margin: 12px 0 4px; }
+.q-prompt { font-size: 1.1rem; font-weight: 600; margin: 4px 0 8px; }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.choices.pcs { display: grid; grid-template-columns: repeat(auto-fill, minmax(5.2rem, 1fr)); }
+.choice { background: transparent; color: var(--text); border-color: var(--line); }
+.choice:hover:not(:disabled) { border-color: var(--accent); }
+.choice.ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+.choice.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+.choice:disabled { cursor: default; opacity: 1; }
+.fb-ok { color: var(--ok); font-weight: 600; }
+.fb-bad { color: var(--bad); font-weight: 600; }
+.score-big { font-size: 2.6rem; font-weight: 700; margin: 8px 0 0; color: var(--accent); }
+.stats { padding-left: 1.2rem; }
+[hidden] { display: none !important; }
