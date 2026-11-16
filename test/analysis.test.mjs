@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { analyseParts, rhythmFromNotes, scaleCoverage, styleFromAnalysis } from "../js/analysis.js";
+import { analyseParts, chordCandidates, guessBars, rhythmFromNotes, scaleCoverage, styleFromAnalysis } from "../js/analysis.js";
 import { generatePhrase, makeNote, midiOf, instrumentById } from "../js/theory.js";
 
 const line = (name, ms, step = 0.5, d = 0.5) => ({ name, notes: ms.map((m, i) => ({ m, t: i * step, d })) });
@@ -52,4 +52,18 @@ test("couverture d'une gamme par la mélodie (pondérée par la durée)", () => 
   const ion = scaleCoverage(0, ["1", "2", "3", "4", "5", "6", "7"], notes);
   assert.equal(mixo, 0.75);
   assert.equal(ion, 1);
+});
+
+test("accords déduits : dominante, mineur 7, split de mesure", () => {
+  const n = (m, t, d = 1) => ({ m, t, d });
+  // G7 : sol grave + si ré fa
+  const [g7] = chordCandidates([n(43, 0, 2), n(59, 0), n(62, 1), n(65, 2), n(67, 3)]);
+  assert.equal(g7.name, "G7");
+  // Dm7
+  const [dm7] = chordCandidates([n(38, 0, 2), n(62, 0), n(65, 1), n(69, 2), n(72, 3)]);
+  assert.equal(dm7.name, "Dm7");
+  // bémols par défaut, dièses si demandé
+  assert.equal(chordCandidates([n(46, 0, 4), n(62, 0), n(65, 1), n(70, 2)], "flat")[0].name, "Bb");
+  const part = { name: "x", notes: [n(38, 0, 2), n(62, 0), n(65, 1), n(43, 2, 2), n(59, 2), n(62, 3), n(65, 3.5, 0.5)] };
+  assert.deepEqual(guessBars([part], 2), ["Dm G7", ""]);
 });

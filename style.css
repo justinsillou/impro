@@ -192,3 +192,16 @@ kbd { border: 1px solid var(--line); border-radius: 4px; padding: 0 .3em; font-s
 .score-table th, .score-table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .spark { display: block; width: 140px; height: 24px; fill: var(--accent); }
 @media print { .score-panel { display: none !important; } }
+
+/* partition visuelle */
+.head.open { fill: var(--panel); stroke: var(--staff); stroke-width: 1.6; }
+.bar-hit { fill: transparent; cursor: pointer; }
+.bar-hit:hover { fill: var(--accent-soft); fill-opacity: .5; }
+.bar-sel { fill: var(--accent-soft); fill-opacity: .45; stroke: var(--accent); stroke-width: 1.2; }
+.barno { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.chordlab { fill: var(--accent); font-size: 14px; font-weight: 700; font-family: inherit; }
+.guess { margin: 8px 0 14px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+.guess p { margin: 4px 0; }
+.excerpt { margin: 10px 0; }
+.excerpt h3 { font-size: 1rem; margin: 6px 0; }
+.excerpt h3 small { color: var(--muted); font-weight: 400; }

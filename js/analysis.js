@@ -10,7 +10,7 @@
  *  - t : position en temps (noires), mesure n = 4 × n + temps dans la mesure,
  *  - d : durée en temps.
  */
-import { degreeSemis, noteFromMidi, noteName } from "./theory.js";
+import { QUALITIES, degreeSemis, noteFromMidi, noteName, spellRoot } from "./theory.js";
 
 const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
 const share = (arr, pred) => (arr.length ? arr.filter(pred).length / arr.length : 0);
@@ -152,6 +152,75 @@ export function rhythmFromNotes(notes, barStart) {
     }
   }
   return flat;
+}
+
+/* ------------------------------------------------- accords déduits des notes */
+
+// petit malus de complexité : à notes égales, on préfère l'accord le plus simple
+const COMPLEXITY = { "": 0, m: 0.02, 7: 0.04, m7: 0.03, maj7: 0.05, 6: 0.1, m6: 0.1, m7b5: 0.08, dim7: 0.1, "7b9": 0.12 };
+const TEMPLATES = Object.entries(QUALITIES).map(([q, d]) => ({
+  q,
+  tones: d.tones.map((t) => ((degreeSemis(t) % 12) + 12) % 12),
+  fifth: ((degreeSemis(d.tones.find((t) => /5$/.test(t))) % 12) + 12) % 12,
+}));
+
+/**
+ * Accords qui collent le mieux à des notes (sons réels) : [{ name, score }],
+ * du meilleur au moins bon. Les notes longues et sur les temps forts comptent
+ * plus, la note la plus grave donne un bonus à la fondamentale.
+ * `name` est un texte d'accord lisible par `parseChord` (ex. « Bb7 »).
+ */
+export function chordCandidates(notes, pref, count = 3) {
+  if (!notes.length) return [];
+  const hist = new Array(12).fill(0);
+  let total = 0;
+  for (const n of notes) {
+    const beat = ((n.t % 4) + 4) % 4;
+    const w = clamp(n.d, 0.25, 4) * (beat % 2 === 0 ? 1.5 : beat % 1 === 0 ? 1.25 : 1);
+    hist[((n.m % 12) + 12) % 12] += w;
+    total += w;
+  }
+  const bass = ((Math.min(...notes.map((n) => n.m)) % 12) + 12) % 12;
+  const out = [];
+  for (let root = 0; root < 12; root++) {
+    for (const t of TEMPLATES) {
+      const set = new Set(t.tones.map((s) => (root + s) % 12));
+      let inside = 0;
+      for (let pc = 0; pc < 12; pc++) if (set.has(pc)) inside += hist[pc];
+      let missing = 0;
+      for (const s of t.tones) if (s !== t.fifth && hist[(root + s) % 12] === 0) missing++;
+      const score = inside / total - 0.8 * ((total - inside) / total) - 0.1 * missing + (bass === root ? 0.2 : 0) - COMPLEXITY[t.q];
+      const r = spellRoot(root, t.q, pref);
+      const name = ["C", "D", "E", "F", "G", "A", "B"][r.letter] + (r.acc > 0 ? "#" : r.acc < 0 ? "b" : "") + t.q;
+      out.push({ name, score });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, count);
+}
+
+/**
+ * Grille déduite d'une partition : une chaîne par mesure (un accord, ou deux
+ * si la mesure change d'harmonie à mi-chemin ; vide s'il n'y a aucune note).
+ */
+export function guessBars(parts, totalBars, pref) {
+  const all = parts.flatMap((p) => p.notes);
+  const win = (a, b) => all.filter((n) => n.t >= a && n.t < b);
+  const bars = [];
+  for (let b = 0; b < totalBars; b++) {
+    const whole = win(b * 4, b * 4 + 4);
+    const [best] = chordCandidates(whole, pref, 1);
+    if (!best) {
+      bars.push("");
+      continue;
+    }
+    const h1 = win(b * 4, b * 4 + 2);
+    const h2 = win(b * 4 + 2, b * 4 + 4);
+    const [c1] = chordCandidates(h1, pref, 1);
+    const [c2] = chordCandidates(h2, pref, 1);
+    const split = h1.length >= 2 && h2.length >= 2 && c1.name !== c2.name && (c1.score + c2.score) / 2 > best.score + 0.2;
+    bars.push(split ? `${c1.name} ${c2.name}` : best.name);
+  }
+  return bars;
 }
 
 /**

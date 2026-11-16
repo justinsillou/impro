@@ -1,15 +1,15 @@
 import {
   INSTRUMENTS, ROOT_CHOICES, analyseChord, chordSymbol, degreeSemis, generatePhrase,
-  inRange, instrumentById, midiOf, noteName, parseChord, phraseNotes, soundingMidi,
+  inRange, instrumentById, makeNote, midiOf, noteName, parseChord, phraseNotes, soundingMidi, spellRoot,
 } from "./theory.js";
 import { PRESETS, presetToBars } from "./presets.js";
-import { phraseSvg, staffSvg } from "./staff.js";
+import { phraseSvg, scoreSvg, staffSvg } from "./staff.js";
 import { Engine } from "./audio.js";
 import { MidiIn } from "./midi.js";
 import { download, midiFile, musicXml } from "./export.js";
 import { initTestUi } from "./test-ui.js";
 import { importFile, parseChordText } from "./import.js";
-import { analyseParts, notesIn, rhythmFromNotes, scaleCoverage, styleFromAnalysis } from "./analysis.js";
+import { analyseParts, chordCandidates, guessBars, notesIn, rhythmFromNotes, scaleCoverage, styleFromAnalysis } from "./analysis.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) =>
@@ -286,7 +286,8 @@ function setScore(title, parts) {
     const bars = Math.max(state.bars.length, ...parts.map((p) => Math.floor(Math.max(...p.notes.map((n) => n.t)) / 4) + 1));
     const analysis = analyseParts(parts, bars);
     if (analysis.length) {
-      score = { title, parts, analysis, model: Math.max(0, analysis.findIndex((a) => a.role === "Mélodie")), adapt: true, echo: false };
+      const model = Math.max(0, analysis.findIndex((a) => a.role === "Mélodie"));
+      score = { title, parts, analysis, model, view: model, bars: Math.min(64, bars), adapt: true, echo: false };
     }
   }
   renderScore();
@@ -315,12 +316,87 @@ function renderScore() {
     )
     .join("");
   box.innerHTML = `
-    <h3>Partition « ${esc(score.title)} » : ce que jouent les instruments</h3>
+    <h3>Partition « ${esc(score.title)} »</h3>
+    <div id="score-view"></div>
+    <h3>Ce que jouent les instruments</h3>
     <p class="hint">Choisis une partie comme <strong>modèle</strong> : les phrases proposées en reprendront le style (tessiture, mouvement, rythme) et la gamme conseillée sera celle qui colle le mieux à ses notes. Les hauteurs sont en sons réels.</p>
     <div class="table-wrap"><table class="score-table"><thead><tr><th>Partie</th><th>Activité par mesure</th><th>Tendance</th></tr></thead><tbody>${rows}</tbody></table></div>
     <label class="inline"><input type="checkbox" id="score-adapt" ${score.adapt ? "checked" : ""}> Adapter mes phrases au style du modèle</label>
     <label class="inline"><input type="checkbox" id="score-echo" ${score.echo ? "checked" : ""}> Reprendre le rythme du modèle sur la mesure</label>
     <button type="button" id="score-forget" class="secondary">Oublier la partition</button>`;
+  renderScoreView();
+}
+
+/* ---- partition visuelle ---- */
+
+/** Hauteur réelle (MIDI) → note écrite pour l'instrument de l'utilisateur. */
+function writtenNote(m) {
+  const w = m + instrument().semis;
+  const r = spellRoot(((w % 12) + 12) % 12, "", accPref());
+  const nat = [0, 2, 4, 5, 7, 9, 11][r.letter];
+  return makeNote(r.letter, r.acc, Math.round((w - r.acc - nat) / 12) - 1);
+}
+
+/** Une mesure d'une partie, prête pour `scoreSvg` (notes écrites + symboles d'accords de la grille). */
+function scoreBar(part, n, resolved) {
+  let at = 0;
+  const label = [];
+  for (const it of resolved[n] ?? []) {
+    if (it.a && !it.implicit && !REPEAT.has(it.text)) label.push({ at, text: chordSymbol(it.a.writtenRoot, it.a.quality, state.names) });
+    at += it.beats;
+  }
+  return {
+    n,
+    label,
+    notes: notesIn(part, n * 4, n * 4 + 4).map((x) => ({ note: writtenNote(x.m), t: x.t - n * 4, d: x.d })),
+  };
+}
+
+const VIEW_BARS = 8;
+
+function guessLabel(name) {
+  const c = parseChord(name);
+  return chordSymbol(spellRoot(c.pc, c.quality, accPref()), c.quality, state.names);
+}
+
+function renderScoreView() {
+  const box = $("#score-view");
+  if (!score || !box) return;
+  const part = score.parts.find((p) => p.name === score.analysis[score.view]?.name) ?? score.parts[0];
+  const resolved = resolveGrid();
+  const total = Math.max(score.bars, state.bars.length);
+  const from = Math.floor(sel.bar / VIEW_BARS) * VIEW_BARS;
+  const to = Math.min(total, from + VIEW_BARS);
+  const rows = [];
+  for (let n = from; n < to; n += 4) {
+    const bars = [];
+    for (let k = n; k < Math.min(n + 4, to); k++) bars.push(scoreBar(part, k, resolved));
+    rows.push(`<div class="staff-wrap">${scoreSvg(bars, instrument().clef, { selected: sel.bar })}</div>`);
+  }
+  const barNotes = score.parts.flatMap((p) => notesIn(p, sel.bar * 4, sel.bar * 4 + 4));
+  const guesses = chordCandidates(barNotes, accPref(), 4);
+  const current = state.bars[sel.bar]?.trim();
+  const empty = !state.bars.some((b) => b.trim());
+  box.innerHTML = `
+    <div class="controls">
+      <label class="field wide"><span>Partie affichée (écrite pour ton instrument)</span>
+        <select id="score-view-part">${score.analysis.map((a, i) => `<option value="${i}" ${i === score.view ? "selected" : ""}>${esc(a.name)} — ${esc(a.role)}</option>`).join("")}</select>
+      </label>
+      <button type="button" class="secondary" data-page="-1" ${from === 0 ? "disabled" : ""}>◀ Mesures précédentes</button>
+      <button type="button" class="secondary" data-page="1" ${to >= total ? "disabled" : ""}>Mesures suivantes ▶</button>
+    </div>
+    <p class="hint">Mesures ${from + 1} à ${to} sur ${total}. <strong>Clique une mesure</strong> pour la choisir : la grille et le détail de l'accord suivent.</p>
+    ${rows.join("")}
+    <div class="guess">
+      <p><strong>Mesure ${sel.bar + 1}</strong>${current ? ` : grille actuelle <code>${esc(current)}</code>` : " : pas encore d'accord"}.
+        ${guesses.length ? "Accords qui collent aux notes (clique pour l'écrire dans la grille) :" : "Aucune note ici."}
+        ${guesses.map((g) => `<button type="button" class="chip" data-guess="${esc(g.name)}">${esc(guessLabel(g.name))}</button>`).join(" ")}
+      </p>
+      <p class="actions">
+        <button type="button" id="score-guess">🎼 Deviner toute la grille depuis les notes</button>
+        ${empty ? `<small class="muted">La grille est vide : ce bouton la remplit (accords en sons réels, à corriger à la main).</small>` : ""}
+      </p>
+    </div>`;
 }
 
 function chipLabel(item) {
@@ -345,6 +421,7 @@ function updateDerived() {
     cells[i].classList.toggle("selected", sel.bar === i);
   });
   renderDetail(resolved);
+  renderScoreView();
   document.dispatchEvent(new CustomEvent("impro:chord-changed"));
 }
 
@@ -389,6 +466,7 @@ function renderDetail(resolved = resolveGrid()) {
     ${coverageHint(a, scale)}
     <div class="staff-wrap">${staffSvg(scaleDeco, inst.clef, style)}</div>
     <p class="legend"><span class="dot tone"></span> note de l'accord (à viser sur les temps forts) <span class="dot"></span> note de passage${anyOut ? ` · <span class="dot out"></span> hors tessiture` : ""}</p>
+    ${excerpt(resolved)}
     <div class="actions">
       <button type="button" id="play-scale">▶ Écouter la gamme</button>
       <button type="button" id="new-phrase">🎲 Idée de phrase</button>
@@ -409,6 +487,16 @@ function renderDetail(resolved = resolveGrid()) {
            <p class="hint">Notes d'accord sur les temps, notes de gamme entre les deux, parfois un silence. Joue-la, puis change-la.</p></div>`
         : ""
     }`;
+}
+
+/** Extrait de la partition (partie modèle) sur la mesure de l'accord choisi. */
+function excerpt(resolved) {
+  if (!score) return "";
+  const part = modelPart() ?? score.parts[0];
+  const bar = scoreBar(part, sel.bar, resolved);
+  if (!bar.notes.length) return "";
+  return `<div class="excerpt"><h3>Extrait de la partition <small>(mesure ${sel.bar + 1}, ${esc(part.name)}, écrit pour ton instrument)</small></h3>
+    <div class="staff-wrap">${scoreSvg([bar], instrument().clef, { selected: -1 })}</div></div>`;
 }
 
 function coverageHint(a, scale) {
@@ -791,7 +879,10 @@ function init() {
 
   $("#score-panel").addEventListener("change", (e) => {
     if (!score) return;
-    if (e.target.name === "model") {
+    if (e.target.id === "score-view-part") {
+      score.view = Number(e.target.value);
+      renderScoreView();
+    } else if (e.target.name === "model") {
       score.model = Number(e.target.value);
       phrase = null;
       select(sel.bar, sel.idx);
@@ -799,6 +890,30 @@ function init() {
     else if (e.target.id === "score-echo") score.echo = e.target.checked;
   });
   $("#score-panel").addEventListener("click", (e) => {
+    const hit = e.target.closest("[data-bar]");
+    if (hit && score) return select(Number(hit.dataset.bar), 0);
+    const page = e.target.closest("[data-page]");
+    if (page && score) {
+      const next = Math.floor(sel.bar / VIEW_BARS) * VIEW_BARS + Number(page.dataset.page) * VIEW_BARS;
+      return select(Math.max(0, Math.min(next, Math.max(score.bars, state.bars.length) - 1)), 0);
+    }
+    const guess = e.target.closest("[data-guess]");
+    if (guess && score) {
+      state.bars[sel.bar] = guess.dataset.guess;
+      renderGrid();
+      save();
+      return;
+    }
+    if (e.target.id === "score-guess" && score) {
+      if (state.bars.some((b) => b.trim()) && !window.confirm("Remplacer les accords actuels de la grille par ceux déduits des notes ?")) return;
+      const n = Math.min(64, Math.max(score.bars, state.bars.length));
+      const bars = guessBars(score.parts, n, accPref());
+      if (!bars.some(Boolean)) return songStatus("Pas assez de notes pour deviner des accords.", true);
+      setBars(bars);
+      songStatus(`Grille déduite des notes : ${bars.filter(Boolean).length} mesures remplies. Vérifie à l'oreille (▶) et corrige ; clique « Enregistrer la grille » pour la garder.`);
+      $("#grid").scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
     if (e.target.id === "score-forget") {
       score = null;
       renderScore();

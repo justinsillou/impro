@@ -170,3 +170,61 @@ export function phraseSvg(events, clef, nameStyle = "fr") {
     parts,
   );
 }
+
+/**
+ * Plusieurs mesures d'une partie, sur une ligne : positions proportionnelles au
+ * temps, têtes pleines/vides, hampes, crochets, points. Pas de barres de croches.
+ *
+ * @param bars   [{ n, notes: [{ note, t, d, acc? }], label?: [{ text, at }] }]  t en temps dans la mesure (0..4)
+ * @param opts   { selected, nameStyle }
+ * Les mesures portent `data-bar` pour pouvoir être cliquées.
+ */
+export function scoreSvg(bars, clef, opts = {}) {
+  const BAR_W = 210;
+  const ds = bars.flatMap((b) => b.notes.map((x) => diatonicIndex(x.note)));
+  const f = frame(clef, ds.length ? ds : [BOTTOM_LINE[clef]], bars.length * BAR_W - 40);
+  const parts = f.parts;
+  const width = LEFT + bars.length * BAR_W + 8;
+  const stemLen = 6.5 * STEP;
+  const middle = f.bottom + 4;
+  const ext = f.bottomY + Math.max(0, f.bottom - Math.min(...(ds.length ? ds : [f.bottom]))) * STEP + 14;
+  // les lignes de portée de frame() s'arrêtent à f.width : on les prolonge
+  parts.forEach((p, i) => (parts[i] = p.replace(/x2="[\d.]+"/, `x2="${width - 4}"`)));
+  const label = (x, y, text, cls) => `<text class="${cls}" x="${x}" y="${y}">${esc(text)}</text>`;
+
+  bars.forEach((b, i) => {
+    const x0 = LEFT + i * BAR_W;
+    if (opts.selected === b.n) parts.push(`<rect class="bar-sel" x="${x0}" y="1" width="${BAR_W}" height="${ext - 2}" rx="4"/>`);
+    parts.push(`<line class="staff-line" x1="${x0 + BAR_W}" x2="${x0 + BAR_W}" y1="${f.top}" y2="${f.bottomY}"/>`);
+    parts.push(label(x0 + 4, 12, String(b.n + 1), "barno"));
+    for (const l of b.label ?? []) parts.push(label(x0 + 12 + (l.at / 4) * (BAR_W - 24) + 14, 12, l.text, "chordlab"));
+    for (const x of b.notes) {
+      const cx = x0 + 18 + (x.t / 4) * (BAR_W - 36);
+      const d = diatonicIndex(x.note);
+      const cy = f.y(d);
+      ledgers(parts, f, cx, d);
+      const open = x.d >= 2 - 1e-6;
+      parts.push(`<ellipse class="${open ? "head open" : "head"}" cx="${cx}" cy="${cy}" rx="7" ry="5" transform="rotate(-18 ${cx} ${cy})"/>`);
+      if (x.note.acc !== 0) {
+        const sym = noteName({ ...x.note, letter: 0 }, "en").slice(1);
+        parts.push(`<text class="acc" x="${cx - 12}" y="${cy + 6}" text-anchor="end">${esc(sym)}</text>`);
+      }
+      if (x.d >= 4 - 1e-6) continue; // ronde : pas de hampe
+      const dir = d >= middle ? "down" : "up";
+      const sx = dir === "up" ? cx + 6.5 : cx - 6.5;
+      const tip = dir === "up" ? cy - stemLen : cy + stemLen;
+      parts.push(`<line class="stem" x1="${sx}" x2="${sx}" y1="${cy}" y2="${tip}"/>`);
+      const s = dir === "up" ? 1 : -1;
+      const flags = x.d <= 0.25 + 1e-6 ? 2 : x.d <= 0.5 + 1e-6 ? 1 : 0;
+      for (let k = 0; k < flags; k++) {
+        const ty = tip + (dir === "up" ? k * 6 : -k * 6);
+        parts.push(`<path class="flag" d="M ${sx} ${ty} q 9 ${s * 6} 5 ${s * 17}"/>`);
+      }
+      if ([0.75, 1.5, 3].some((v) => Math.abs(x.d - v) < 0.01)) parts.push(`<circle class="dotmark" cx="${cx + 12}" cy="${cy - (d % 2 === 0 ? 3 : 0)}" r="1.8"/>`);
+    }
+    parts.push(`<rect class="bar-hit" data-bar="${b.n}" x="${x0}" y="0" width="${BAR_W}" height="${ext}"><title>Mesure ${b.n + 1}</title></rect>`);
+  });
+
+  const height = ext;
+  return `<svg class="staff score-line" viewBox="0 0 ${width} ${height}" width="${width}" role="img" aria-label="Partition, mesures ${bars[0].n + 1} à ${bars[bars.length - 1].n + 1}">${parts.join("")}</svg>`;
+}
