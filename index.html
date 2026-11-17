@@ -10,15 +10,32 @@
 <body>
   <header class="site-header">
     <h1>Grille d'impro</h1>
-    <p>Écris une grille d'accords. Pour chaque accord, vois les notes et les gammes à jouer, <strong>écrites pour ton instrument</strong>. Écoute, puis improvise dessus.</p>
+    <p>Choisis ton instrument et un morceau, écoute-le, puis improvise dessus avec les notes et les gammes <strong>écrites pour ton instrument</strong>.</p>
   </header>
 
+  <div class="transport-bar" role="region" aria-label="Lecture">
+    <button type="button" id="play" aria-pressed="false">▶ Jouer</button>
+    <label class="inline">Tempo <input type="range" id="tempo" min="40" max="220" step="2"> <output id="tempo-out"></output></label>
+    <label class="inline"><input type="checkbox" id="loop"> En boucle</label>
+    <details class="play-opts">
+      <summary>Ce qui se joue</summary>
+      <div class="play-opts-body">
+        <label class="inline"><input type="checkbox" id="backing"> Accords et basse</label>
+        <label class="inline"><input type="checkbox" id="drums"> Batterie</label>
+        <label class="inline"><input type="checkbox" id="click"> Métronome</label>
+        <label class="inline"><input type="checkbox" id="swing"> Swing (croches « ternaires »)</label>
+        <small class="muted">Les instruments de la partition se cochent dans « Instruments du morceau ».</small>
+      </div>
+    </details>
+    <span id="play-what" class="play-what" aria-live="polite"></span>
+  </div>
+
   <main>
-    <section class="panel" aria-labelledby="h-setup">
-      <h2 id="h-setup">1. Ton instrument et ta grille</h2>
+    <section class="panel" aria-labelledby="h-inst">
+      <h2 id="h-inst">Mon instrument</h2>
       <div class="controls">
         <label class="field wide">
-          <span>Mon instrument (comment c'est écrit sur ma partition)</span>
+          <span>Instrument (comment c'est écrit sur ma partition)</span>
           <select id="inst"></select>
         </label>
         <label class="field">
@@ -31,56 +48,52 @@
         <label class="field narrow">
           <span>Altérations</span>
           <select id="acc" title="Comment écrire les notes altérées : Do♯ ou Ré♭ ?">
-            <option value="auto">Auto (comme je tape)</option>
+            <option value="auto">Auto</option>
             <option value="sharp">Dièses ♯</option>
             <option value="flat">Bémols ♭</option>
           </select>
         </label>
       </div>
+      <p class="hint">Les accords sont toujours en <strong>sons réels</strong> (ce que tu entends). Ce que tu lis (accords, gammes, partition) est <strong>transposé pour ton instrument</strong>.</p>
+    </section>
+
+    <section class="panel" aria-labelledby="h-song">
+      <h2 id="h-song">Mon morceau</h2>
       <div class="controls">
-        <label class="field">
-          <span>Grille type</span>
+        <label class="field wide">
+          <span>Morceau ou grille type</span>
           <select id="preset"></select>
         </label>
-        <label class="field narrow">
-          <span>Tonalité (réelle)</span>
+        <label class="field narrow" id="key-field">
+          <span>Tonalité</span>
           <select id="key"></select>
         </label>
-        <label class="field narrow" id="section-field" hidden>
-          <span>Section (16 mesures)</span>
+        <label class="field" id="section-field" hidden>
+          <span>Partie du morceau (16 mesures à la fois)</span>
           <select id="section"></select>
         </label>
-        <button type="button" id="apply-preset" class="secondary">Charger la grille</button>
       </div>
       <p id="preset-info" class="hint"></p>
       <div class="controls songs">
-        <button type="button" id="import-btn" class="secondary">📂 Importer un morceau</button>
+        <button type="button" id="import-btn">📂 Importer un fichier</button>
         <input type="file" id="import-file" hidden accept=".mscz,.mscx,.musicxml,.xml,.mxl,.txt">
         <button type="button" id="paste-song" class="secondary">📋 Coller des accords</button>
-        <button type="button" id="save-song" class="secondary">💾 Enregistrer la grille</button>
+        <button type="button" id="save-song" class="secondary">💾 Garder ce morceau</button>
         <button type="button" id="delete-song" class="secondary" hidden>🗑 Supprimer ce morceau</button>
       </div>
       <p id="song-status" class="hint" aria-live="polite"></p>
       <details class="explain">
         <summary>Quels fichiers puis-je importer ?</summary>
-        <p><strong>MuseScore</strong> (<code>.mscz</code>, <code>.mscx</code>), <strong>MusicXML</strong> (<code>.musicxml</code>, <code>.xml</code>, <code>.mxl</code>) ou un <strong>fichier texte</strong> d'accords. Les <em>symboles d'accords</em> remplissent la grille, et les <em>notes de chaque instrument</em> sont analysées (tessiture, mouvement, rythme, activité) pour orienter les phrases proposées. Sans symboles d'accords, la grille reste vide : tape les accords toi-même, l'analyse des notes marche quand même. Dans MuseScore, ajoute-les avec <kbd>Ctrl</kbd>+<kbd>K</kbd>. Mesures en 4/4, 4 accords par mesure. Le fichier est lu jusqu'à 64 mesures, mais la grille n'en montre que 16 à la fois (choisis la « Section » pour la suite). Le fichier est lu dans ton navigateur et n'est jamais envoyé.</p>
-        <p>Tes morceaux sont gardés dans ce navigateur uniquement (menu « Grille type » → « Mes morceaux »).</p>
+        <p><strong>MuseScore</strong> (<code>.mscz</code>, <code>.mscx</code>), <strong>MusicXML</strong> (<code>.musicxml</code>, <code>.xml</code>, <code>.mxl</code>) ou un <strong>fichier texte</strong> d'accords. Chaque instrument du fichier est repris avec son nom, ses notes sont analysées et tu peux les écouter. S'il y a des <em>symboles d'accords</em>, ils remplissent la grille ; sinon les accords sont <em>déduits des notes</em> (à corriger à la main). Mesures en 4/4, 4 accords par mesure, 64 mesures au maximum lues, affichées 16 par 16. Le fichier est lu dans ton navigateur et n'est jamais envoyé. Tes morceaux sont gardés dans ce navigateur uniquement.</p>
       </details>
-      <div id="score-panel" class="score-panel" hidden></div>
     </section>
 
+    <section class="panel" id="score-panel" aria-labelledby="h-parts" hidden></section>
+
     <section class="panel" aria-labelledby="h-grid">
-      <h2 id="h-grid">2. La grille <small>(<span id="bar-count">12</span> mesures, 16 au maximum)</small></h2>
-      <p class="hint">Un ou deux accords par mesure, séparés par un espace&nbsp;: <code>Dm7 G7</code>. Un <code>%</code> répète l'accord précédent. Types reconnus&nbsp;: <code>C</code> <code>Cm</code> <code>C7</code> <code>Cmaj7</code> <code>Cm7</code> <code>Cm7b5</code> <code>Cdim7</code> <code>C7b9</code> <code>C6</code> <code>Cm6</code>. Tu peux aussi écrire <code>Do</code>, <code>Rém7</code>, <code>Sol7</code>, <code>Sib</code>… Les accords que tu tapes sont en <strong>sons réels</strong> (concert) ; sous chaque mesure tu lis l'accord <strong>tel qu'il s'écrit pour toi</strong> et la gamme conseillée.</p>
+      <h2 id="h-grid">La grille <small>(<span id="bar-count">12</span> mesures, 16 au maximum)</small></h2>
+      <p class="hint">Écris un ou deux accords par mesure, séparés par un espace&nbsp;: <code>Dm7 G7</code>. <code>%</code> répète l'accord précédent. Clique sur un accord sous la mesure pour voir ses notes et ses gammes plus bas.</p>
       <div id="grid" class="grid"></div>
-      <div class="transport">
-        <button type="button" id="play" aria-pressed="false">▶ Jouer la grille</button>
-        <label class="inline">Tempo <input type="range" id="tempo" min="40" max="220" step="2"> <output id="tempo-out"></output></label>
-        <label class="inline"><input type="checkbox" id="loop"> En boucle</label>
-        <label class="inline"><input type="checkbox" id="click"> Métronome</label>
-        <label class="inline"><input type="checkbox" id="swing"> Swing</label>
-        <label class="inline"><input type="checkbox" id="drums"> Batterie</label>
-      </div>
       <div class="transport tools">
         <button type="button" id="add-bars" class="secondary">+ 4 mesures</button>
         <button type="button" id="remove-bars" class="secondary">− 4 mesures</button>
@@ -90,15 +103,19 @@
         <button type="button" id="dl-midi" class="secondary">⬇ MIDI</button>
         <button type="button" id="dl-xml" class="secondary">⬇ MusicXML</button>
       </div>
+      <details class="explain">
+        <summary>Quels accords puis-je écrire ?</summary>
+        <p><code>C</code> <code>Cm</code> <code>C7</code> <code>Cmaj7</code> <code>Cm7</code> <code>Cm7b5</code> <code>Cdim7</code> <code>C7b9</code> <code>C6</code> <code>Cm6</code>. Tu peux aussi écrire <code>Do</code>, <code>Rém7</code>, <code>Sol7</code>, <code>Sib</code>…</p>
+      </details>
     </section>
 
     <section class="panel" id="follow" aria-labelledby="h-follow" hidden>
-      <h2 id="h-follow">3. La partition à suivre</h2>
+      <h2 id="h-follow">La partition à suivre</h2>
       <div id="score-view"></div>
     </section>
 
     <section class="panel" id="detail-panel" aria-labelledby="h-detail">
-      <h2 id="h-detail">4. Un accord en détail</h2>
+      <h2 id="h-detail">Un accord en détail</h2>
       <div id="detail" aria-live="polite"></div>
       <details class="explain">
         <summary>C'est quoi « Mixolydien », « Dorien »… ?</summary>
@@ -116,7 +133,7 @@
     </section>
 
     <section class="panel" id="midi-panel" aria-labelledby="h-midi">
-      <h2 id="h-midi">5. Clavier MIDI</h2>
+      <h2 id="h-midi">Clavier MIDI</h2>
       <p class="hint">Branche ton clavier en USB, clique « Connecter » et autorise l'accès. Chaque note que tu joues s'affiche <strong>telle que tu la lis sur ta partition</strong> (transposée), avec un verdict : note de l'accord, note de gamme ou hors gamme, selon l'accord en cours. Fonctionne avec Chrome, Edge et Opera ; rien n'est envoyé hors de ton navigateur.</p>
       <div class="controls">
         <button type="button" id="midi-connect">🎹 Connecter mon clavier</button>
@@ -128,7 +145,7 @@
     </section>
 
     <section class="panel" aria-labelledby="h-test">
-      <h2 id="h-test">6. Mode test</h2>
+      <h2 id="h-test">Mode test</h2>
       <div class="tabs" role="tablist" aria-label="Type de test">
         <button type="button" role="tab" class="tab" data-mode="quiz" aria-selected="true">Quiz</button>
         <button type="button" role="tab" class="tab" data-mode="improv" aria-selected="false">Test d'impro (clavier)</button>

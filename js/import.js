@@ -130,18 +130,54 @@ function mscxDur(el) {
   return (DUR[type] ?? 1) * (2 - 0.5 ** dots);
 }
 
+/** Noms français des familles d'instruments (identifiant MuseScore → nom), quand le fichier n'en donne pas. */
+const INSTRUMENT_IDS = [
+  [/saxophone\.soprano/, "Saxophone soprano"], [/saxophone\.alto/, "Saxophone alto"], [/saxophone\.tenor/, "Saxophone ténor"],
+  [/saxophone\.baritone/, "Saxophone baryton"], [/saxophone/, "Saxophone"], [/clarinet\.bass/, "Clarinette basse"],
+  [/clarinet/, "Clarinette"], [/flute/, "Flûte"], [/oboe/, "Hautbois"], [/bassoon/, "Basson"], [/trumpet/, "Trompette"],
+  [/trombone/, "Trombone"], [/euphonium/, "Euphonium"], [/sousaphone/, "Sousaphone"], [/tuba/, "Tuba"], [/horn/, "Cor"],
+  [/cornet/, "Cornet"], [/flugelhorn/, "Bugle"], [/voice/, "Voix"], [/piano/, "Piano"], [/guitar\.bass|bass\.guitar/, "Basse"],
+  [/guitar/, "Guitare"], [/contrabass|bass/, "Contrebasse"], [/violin/, "Violon"], [/viola/, "Alto (violon)"], [/cello/, "Violoncelle"],
+  [/organ/, "Orgue"], [/vibraphone/, "Vibraphone"], [/accordion/, "Accordéon"], [/drum|perc/, "Percussions"],
+];
+const idName = (id) => INSTRUMENT_IDS.find(([re]) => re.test(id))?.[1] ?? "";
+
+/** Nom lisible d'une partie MuseScore (`<Part>`), du plus précis au plus général. */
+export function mscxPartName(part) {
+  const inst = kids(part, "Instrument")[0];
+  const named = (inst && (txt(inst, "longName") || txt(inst, "trackName"))) || txt(part, "trackName") || txt(part, "partName") || (inst ? txt(inst, "shortName") : "");
+  return named || idName(`${inst ? txt(inst, "instrumentId") : ""} ${inst?.getAttribute("id") ?? ""}`.trim()) || "";
+}
+
+/** Partie sans hauteurs (batterie, percussions) : rien à analyser ni à faire entendre. */
+const isUnpitched = (part) => {
+  const inst = kids(part, "Instrument")[0];
+  return kids(part, "Staff").some((s) => s.querySelector('StaffType[group="percussion"]')) || /^drum|perc/.test(inst ? txt(inst, "instrumentId") : "");
+};
+
 /** Notes de chaque portée (son réel). Une partie = une portée. */
 function mscxParts(doc) {
-  const names = new Map(); // id de portée -> nom
+  // Les <Staff> d'une <Part> n'ont pas toujours d'attribut `id` (MuseScore 4) : on les numérote
+  // dans l'ordre du fichier, comme les <Staff id="n"> qui portent les mesures.
+  const info = new Map(); // id de portée -> { name, skip }
+  let order = 0;
   for (const part of doc.querySelectorAll("Part")) {
-    const name = txt(part, "trackName") || txt(kids(part, "Instrument")[0] ?? part, "longName") || txt(kids(part, "Instrument")[0] ?? part, "trackName");
-    const ids = kids(part, "Staff").map((x) => x.getAttribute("id"));
-    ids.forEach((id, i) => names.set(id, ids.length > 1 ? `${name || "Partie"} (portée ${i + 1})` : name));
+    const name = mscxPartName(part);
+    const staves = kids(part, "Staff");
+    const skip = isUnpitched(part);
+    staves.forEach((s, i) => {
+      order++;
+      const id = s.getAttribute("id") ?? String(order);
+      const label = staves.length === 2 ? `${name || "Partie"} (${i === 0 ? "portée du haut" : "portée du bas"})` : staves.length > 2 ? `${name || "Partie"} (portée ${i + 1})` : name;
+      info.set(id, { name: label, skip });
+    });
   }
+  const names = new Map([...info].map(([id, v]) => [id, v.name]));
   const parts = [];
   for (const staff of doc.querySelectorAll("Staff")) {
     const measures = kids(staff, "Measure");
     if (!measures.length) continue;
+    if (info.get(staff.getAttribute("id"))?.skip) continue;
     const notes = [];
     measures.slice(0, MAX_BARS).forEach((meas, bar) => {
       for (const voice of kids(meas, "voice")) {
@@ -331,7 +367,8 @@ export async function importFile(file) {
     const isMs = name.endsWith(".mscz");
     let pick;
     if (isMs) {
-      pick = entries.find((e) => e.name.endsWith(".mscx"));
+      // la partition complète, pas les « Excerpts/ » (parties séparées)
+      pick = entries.find((e) => e.name.endsWith(".mscx") && !e.name.includes("/")) ?? entries.find((e) => e.name.endsWith(".mscx"));
     } else {
       const cont = entries.find((e) => e.name === "META-INF/container.xml");
       const rootPath = cont ? /full-path="([^"]+)"/.exec(dec.decode(await cont.read()))?.[1] : null;

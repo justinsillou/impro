@@ -15,6 +15,7 @@ const VOICES = {
   bass: { type: "triangle", gain: 0.3, attack: 0.01, release: 0.12 },
   lead: { type: "sine", gain: 0.22, attack: 0.01, release: 0.08 },
   live: { type: "triangle", gain: 0.2, attack: 0.008, release: 0.15 },
+  part: { type: "triangle", gain: 0.2, attack: 0.012, release: 0.06 }, // instrument de la partition importée
 };
 
 export class Engine {

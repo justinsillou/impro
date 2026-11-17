@@ -78,6 +78,7 @@ const DEFAULT = {
   click: true,
   swing: true,
   drums: true,
+  backing: true,
 };
 
 /** Lit un état venu de l'extérieur (lien, stockage) en ne gardant que du valide. */
@@ -94,7 +95,7 @@ function sanitize(raw) {
   if (Number.isFinite(raw.tempo)) s.tempo = Math.min(220, Math.max(40, Math.round(raw.tempo)));
   if (ROOT_CHOICES.includes(raw.key)) s.key = raw.key;
   if (findPreset(raw.preset)) s.preset = raw.preset;
-  for (const k of ["loop", "click", "swing", "drums"]) if (typeof raw[k] === "boolean") s[k] = raw[k];
+  for (const k of ["loop", "click", "swing", "drums", "backing"]) if (typeof raw[k] === "boolean") s[k] = raw[k];
   return s;
 }
 
@@ -193,7 +194,7 @@ function renderControls() {
   $("#acc").value = state.acc;
   $("#tempo").value = state.tempo;
   $("#tempo-out").textContent = state.tempo;
-  for (const k of ["loop", "click", "swing", "drums"]) $("#" + k).checked = state[k];
+  for (const k of ["loop", "click", "swing", "drums", "backing"]) $("#" + k).checked = state[k];
   renderPresetInfo();
 }
 
@@ -211,15 +212,31 @@ function renderPresetInfo() {
     ? `Ton morceau « ${p.name} » : ${p.bars.length} mesures, accords en sons réels (la tonalité ne les change pas).`
     : p.info;
   $("#delete-song").hidden = !isSong(state.preset);
-  $("#key").disabled = isSong(state.preset);
+  $("#key-field").hidden = isSong(state.preset);
   renderSection();
 }
 
 /** Grille complète de la source choisie (grille type ou morceau), avant découpe en sections. */
 function sourceBars() {
   const p = findPreset(state.preset);
-  return isSong(p.id) ? p.bars : presetToBars(p, rootPc(state.key), keyPref());
+  if (!isSong(p.id)) return presetToBars(p, rootPc(state.key), keyPref());
+  // morceau sans symboles d'accords : on déduit la grille des notes
+  if (p.parts && !p.bars.some((b) => b.trim())) return guessedBars(p);
+  return p.bars;
 }
+
+const guessCache = new Map();
+function guessedBars(song) {
+  const key = `${song.id}|${accPref() ?? ""}`;
+  if (!guessCache.has(key)) guessCache.set(key, guessBars(song.parts, song.bars.length, accPref(), song.offset ?? 0));
+  return guessCache.get(key);
+}
+
+/** La grille a-t-elle été modifiée à la main depuis son dernier chargement ? */
+let loadedBars = null;
+let shown = null; // morceau et tonalité actuellement chargés (pour annuler un changement)
+const isDirty = () => loadedBars !== null && state.bars.some((b, i) => b.trim() !== (loadedBars[i] ?? "")) ;
+const confirmReplace = () => !isDirty() || window.confirm("Tu as modifié la grille : la remplacer ?");
 
 function renderSection() {
   const n = sourceBars().length;
@@ -238,7 +255,7 @@ function loadSection(sec) {
   const song = isSong(p.id);
   state.sec = sec;
   const bars = sourceBars().slice(sec * GRID_MAX, (sec + 1) * GRID_MAX);
-  setBars(bars.length ? bars : ["", "", "", ""]);
+  setBars(bars.length ? bars : ["", "", "", ""], true);
   setScore(p.name, song ? p.parts : null, song ? (p.offset ?? 0) + sec * GRID_MAX : 0);
   renderSection();
 }
@@ -321,11 +338,18 @@ function setScore(title, parts, offset = 0) {
   score = null;
   followBar = null;
   if (parts && parts.length) {
+    // deux parties de même nom (2 trompettes) : on les distingue
+    const seen = new Map();
+    parts = parts.map((p) => {
+      const n = (seen.get(p.name) ?? 0) + 1;
+      seen.set(p.name, n);
+      return n > 1 ? { ...p, name: `${p.name} ${n}` } : p;
+    });
     const bars = Math.max(1, ...parts.map((p) => Math.floor(Math.max(...p.notes.map((n) => n.t)) / 4) + 1));
     const analysis = analyseParts(parts, bars);
     if (analysis.length) {
       const model = Math.max(0, analysis.findIndex((a) => a.role === "Mélodie"));
-      score = { title, parts, analysis, model, view: model, bars: Math.min(64, bars), offset, adapt: true, echo: false };
+      score = { title, parts, analysis, model, listen: new Set([model]), bars: Math.min(64, bars), offset, adapt: true, echo: false };
     }
   }
   renderScore();
@@ -338,9 +362,23 @@ const spark = (a) => {
   return `<svg class="spark" viewBox="0 0 ${a.perBar.length * (w + 1)} 24" preserveAspectRatio="none" role="img" aria-label="Notes par mesure">${bars}</svg>`;
 };
 
+const partOf = (i) => score?.parts.find((p) => p.name === score.analysis[i]?.name);
+
+/** Une phrase qui dit ce qui sera joué en appuyant sur « Jouer ». */
+function renderPlayWhat() {
+  const el = $("#play-what");
+  if (!el) return;
+  const bits = [];
+  if (state.backing) bits.push("accords + basse");
+  if (state.drums) bits.push("batterie");
+  if (score) for (const i of score.listen) if (score.analysis[i]) bits.push(score.analysis[i].name);
+  el.textContent = bits.length ? "Joue : " + bits.join(", ") : "Rien de coché : active « Ce qui se joue ».";
+}
+
 function renderScore() {
   const box = $("#score-panel");
   box.hidden = !score;
+  renderPlayWhat();
   if (!score) {
     box.innerHTML = "";
     return;
@@ -348,19 +386,23 @@ function renderScore() {
   const rows = score.analysis
     .map(
       (a, i) => `<tr>
-        <td><label><input type="radio" name="model" value="${i}" ${i === score.model ? "checked" : ""}> <strong>${esc(a.name)}</strong></label><br><small>${esc(a.role)}</small></td>
-        <td>${spark(a)}<small>${a.count} notes · ${a.density.toFixed(1)} par mesure jouée</small></td>
-        <td>${esc(a.text)}</td></tr>`,
+        <td class="c"><input type="checkbox" name="listen" value="${i}" ${score.listen.has(i) ? "checked" : ""} aria-label="Entendre : ${esc(a.name)}"></td>
+        <td><strong>${esc(a.name)}</strong><br><small>${esc(a.role)}</small></td>
+        <td class="c"><input type="radio" name="model" value="${i}" ${i === score.model ? "checked" : ""} aria-label="Suivre : ${esc(a.name)}"></td>
+        <td>${spark(a)}<small>${a.count} notes</small></td>
+        <td class="trend">${esc(a.text)}</td></tr>`,
     )
     .join("");
   box.innerHTML = `
-    <h3>Partition « ${esc(score.title)} » <small>(à suivre en bas, au-dessus de l'accord en détail)</small></h3>
-    <h3>Ce que jouent les instruments</h3>
-    <p class="hint">Choisis une partie comme <strong>modèle</strong> : les phrases proposées en reprendront le style (tessiture, mouvement, rythme) et la gamme conseillée sera celle qui colle le mieux à ses notes. Les hauteurs sont en sons réels.</p>
-    <div class="table-wrap"><table class="score-table"><thead><tr><th>Partie</th><th>Activité par mesure</th><th>Tendance</th></tr></thead><tbody>${rows}</tbody></table></div>
-    <label class="inline"><input type="checkbox" id="score-adapt" ${score.adapt ? "checked" : ""}> Adapter mes phrases au style du modèle</label>
-    <label class="inline"><input type="checkbox" id="score-echo" ${score.echo ? "checked" : ""}> Reprendre le rythme du modèle sur la mesure</label>
-    <button type="button" id="score-forget" class="secondary">Oublier la partition</button>`;
+    <h2 id="h-parts">Instruments du morceau <small>« ${esc(score.title)} »</small></h2>
+    <p class="hint"><strong>Entendre</strong> : l'instrument joue quand tu appuies sur ▶ Jouer. <strong>Suivre</strong> : sa partie s'affiche plus bas, écrite pour ton instrument, et sert de modèle à tes phrases d'impro. Les hauteurs décrites sont en sons réels.</p>
+    <div class="table-wrap"><table class="score-table"><thead><tr><th class="c">Entendre</th><th>Instrument</th><th class="c">Suivre</th><th>Activité</th><th>Ce qu'il joue</th></tr></thead><tbody>${rows}</tbody></table></div>
+    <details class="explain">
+      <summary>Réglages des phrases d'impro</summary>
+      <label class="inline"><input type="checkbox" id="score-adapt" ${score.adapt ? "checked" : ""}> Adapter mes phrases au style de l'instrument suivi</label><br>
+      <label class="inline"><input type="checkbox" id="score-echo" ${score.echo ? "checked" : ""}> Reprendre son rythme sur la mesure</label>
+    </details>
+    <p class="actions"><button type="button" id="score-forget" class="secondary">Oublier la partition</button></p>`;
   renderScoreView();
 }
 
@@ -405,7 +447,7 @@ function renderScoreView() {
     box.innerHTML = "";
     return;
   }
-  const part = score.parts.find((p) => p.name === score.analysis[score.view]?.name) ?? score.parts[0];
+  const part = partOf(score.model) ?? score.parts[0];
   const resolved = resolveGrid();
   const total = state.bars.length;
   viewFrom = Math.floor((followBar ?? sel.bar) / VIEW_BARS) * VIEW_BARS;
@@ -423,17 +465,16 @@ function renderScoreView() {
   const empty = !state.bars.some((b) => b.trim());
   box.innerHTML = `
     <div class="follow-head">
-      <button type="button" id="play2" aria-pressed="${engine.playing}">${engine.playing ? "■ Arrêter" : "▶ Jouer la grille"}</button>
       <span class="follow-now" id="follow-now" aria-live="off"></span>
-      <label class="field wide"><span>Partie affichée (écrite pour ton instrument)</span>
-        <select id="score-view-part">${score.analysis.map((a, i) => `<option value="${i}" ${i === score.view ? "selected" : ""}>${esc(a.name)} — ${esc(a.role)}</option>`).join("")}</select>
+      <label class="field wide"><span>Instrument suivi (écrit pour ton instrument)</span>
+        <select id="score-view-part">${score.analysis.map((a, i) => `<option value="${i}" ${i === score.model ? "selected" : ""}>${esc(a.name)} — ${esc(a.role)}</option>`).join("")}</select>
       </label>
     </div>
     <div class="controls">
       <button type="button" class="secondary" data-page="-1" ${from === 0 ? "disabled" : ""}>◀ Mesures précédentes</button>
       <button type="button" class="secondary" data-page="1" ${to >= total ? "disabled" : ""}>Mesures suivantes ▶</button>
     </div>
-    <p class="hint">« ${esc(score.title)} » · mesures de la grille ${from + 1} à ${to} (mesures ${absBar(from) + 1} à ${absBar(to - 1) + 1} du morceau). Pendant la lecture, le trait orange avance et les mesures se tournent toutes seules. <strong>Clique une mesure</strong> pour la choisir : la grille et le détail de l'accord suivent.</p>
+    <p class="hint">« ${esc(score.title)} » · mesures de la grille ${from + 1} à ${to} (mesures ${absBar(from) + 1} à ${absBar(to - 1) + 1} du morceau). Pendant la lecture, le trait orange avance et les mesures se tournent toutes seules. <strong>Clique une mesure</strong> pour la choisir.</p>
     ${rows.join("")}
     <div class="guess">
       <p><strong>Mesure ${sel.bar + 1}</strong>${current ? ` : grille actuelle <code>${esc(current)}</code>` : " : pas encore d'accord"}.
@@ -441,7 +482,7 @@ function renderScoreView() {
         ${guesses.map((g) => `<button type="button" class="chip" data-guess="${esc(g.name)}">${esc(guessLabel(g.name))}</button>`).join(" ")}
       </p>
       <p class="actions">
-        <button type="button" id="score-guess">🎼 Deviner la grille depuis les notes</button>
+        <button type="button" id="score-guess" class="secondary">🎼 Refaire la grille depuis les notes</button>
         ${empty ? `<small class="muted">La grille est vide : ce bouton la remplit (accords en sons réels, à corriger à la main).</small>` : ""}
       </p>
     </div>`;
@@ -667,18 +708,34 @@ function drumEvents(totalBeats) {
   return ev;
 }
 
-function gridEvents() {
+/** Notes des instruments cochés « Entendre » (sons réels), sur la section de grille affichée. */
+function scoreEvents(total) {
+  if (!score) return [];
+  const from = absBar(0) * 4;
+  const events = [];
+  for (const i of score.listen) {
+    const part = partOf(i);
+    if (!part) continue;
+    for (const n of notesIn(part, from, from + total)) {
+      events.push({ t: n.t - from, dur: Math.max(0.12, Math.min(n.d, from + total - n.t) * 0.95), midi: n.m, kind: "part" });
+    }
+  }
+  return events;
+}
+
+function gridEvents({ backing = state.backing, withScore = true } = {}) {
   const flat = resolveGrid().flat();
   const events = [];
   const beatItems = [];
   let beat = 0;
   flat.forEach((item, i) => {
-    if (item.a) events.push(...chordEvents(item, beat, flat[(i + 1) % flat.length], i));
+    if (item.a && backing) events.push(...chordEvents(item, beat, flat[(i + 1) % flat.length], i));
     for (let k = 0; k < item.beats; k++) beatItems.push(item.a ? item : null);
     beat += item.beats;
   });
   if (state.click) for (let b = 0; b < beat; b++) events.push({ t: b, dur: 0, kind: "click", accent: b % 4 === 0 });
   if (state.drums) events.push(...drumEvents(beat));
+  if (withScore) events.push(...scoreEvents(beat));
   return { events, total: beat, beatItems };
 }
 
@@ -695,11 +752,9 @@ function beatInfo() {
 }
 
 function setPlayButton(on) {
-  for (const b of [$("#play"), $("#play2")]) {
-    if (!b) continue;
-    b.textContent = on ? "■ Arrêter" : "▶ Jouer la grille";
-    b.setAttribute("aria-pressed", String(on));
-  }
+  const b = $("#play");
+  b.textContent = on ? "■ Arrêter" : "▶ Jouer";
+  b.setAttribute("aria-pressed", String(on));
 }
 
 function clearPlaying() {
@@ -713,7 +768,7 @@ function playGrid(opts = {}) {
     engine.stop();
     return;
   }
-  const { events, total, beatItems } = gridEvents();
+  const { events, total, beatItems } = gridEvents({ withScore: !opts.noScore });
   if (!total) return;
   setPlayButton(true);
   startFollow();
@@ -779,7 +834,7 @@ function playSnippet(kind) {
 const fileSlug = () => `grille-impro-${state.key.replace("#", "s")}`;
 
 function exportGridMidi() {
-  const { events } = gridEvents();
+  const { events } = gridEvents({ backing: true, withScore: false });
   const pick = (kind, vel) => events.filter((e) => e.kind === kind).map((e) => ({ t: e.t, dur: e.dur, midi: e.midi, vel }));
   const bytes = midiFile({
     tempo: state.tempo,
@@ -842,6 +897,7 @@ function addSong(name, bars, parts, offset = 0) {
   saveSongs();
   state.preset = id;
   state.sec = 0;
+  shown = { preset: id, key: state.key };
   renderPresets();
   renderPresetInfo();
   save();
@@ -854,14 +910,21 @@ function initSongs() {
     e.target.value = "";
     if (!file) return;
     try {
-      const { bars, skipped, title, parts } = await importFile(file);
+      const imported = await importFile(file);
+      const { skipped, title, parts } = imported;
+      let bars = imported.bars;
+      const guessed = !bars.some((b) => b.trim()) && parts?.length;
+      if (guessed) bars = guessBars(parts, bars.length, accPref(), 0);
       addSong(title, bars, parts, 0);
-      setBars(bars.slice(0, GRID_MAX));
+      setBars(bars.slice(0, GRID_MAX), true);
       setScore(title, parts, 0);
       songStatus(
-        `« ${title} » importé : ${bars.length} mesures` + (bars.length > GRID_MAX ? ` (la grille en montre ${GRID_MAX} à la fois : choisis la « Section » pour la suite)` : "") + (skipped ? ` (${skipped} accord(s) non reconnu(s) ignoré(s))` : "") +
-          (score ? ` et ${score.analysis.length} partie(s) analysée(s) (voir plus bas)` : "") +
-          ". Les accords sont lus en sons réels ; corrige à la main si besoin.",
+        `« ${title} » importé : ${bars.length} mesures` +
+          (bars.length > GRID_MAX ? ` (la grille en montre ${GRID_MAX} à la fois : change la « Partie du morceau » pour la suite)` : "") +
+          (skipped ? ` (${skipped} accord(s) non reconnu(s) ignoré(s))` : "") +
+          (score ? `, ${score.analysis.length} instrument(s) trouvé(s) : ${score.analysis.map((a) => a.name).join(", ")}` : "") +
+          (guessed ? ". Le fichier n'a pas de symboles d'accords : j'ai déduit la grille des notes, à corriger à la main." : ". Les accords sont lus en sons réels ; corrige à la main si besoin.") +
+          " Appuie sur ▶ Jouer pour l'écouter.",
       );
     } catch (err) {
       songStatus(err.message || "Import impossible.", true);
@@ -880,8 +943,8 @@ function initSongs() {
     if (!text) return;
     const { bars, skipped } = parseChordText(text);
     if (!bars.length) return songStatus("Aucun accord reconnu.", true);
-    setBars(bars);
-    songStatus(`${bars.length} mesures chargées` + (skipped ? ` (${skipped} élément(s) ignoré(s))` : "") + ". Clique « Enregistrer » pour les garder.");
+    setBars(bars, true);
+    songStatus(`${bars.length} mesures chargées` + (skipped ? ` (${skipped} élément(s) ignoré(s))` : "") + ". Clique « Garder ce morceau » pour les conserver.");
   });
   $("#delete-song").addEventListener("click", () => {
     const p = findPreset(state.preset);
@@ -889,6 +952,7 @@ function initSongs() {
     songs = songs.filter((x) => x.id !== p.id);
     saveSongs();
     state.preset = PRESETS[0].id;
+    shown = { preset: state.preset, key: state.key };
     renderPresets();
     renderPresetInfo();
     save();
@@ -898,8 +962,9 @@ function initSongs() {
 
 /* ------------------------------------------------------------ évènements */
 
-function setBars(bars) {
+function setBars(bars, loaded = false) {
   state.bars = bars;
+  if (loaded) loadedBars = bars.map((b) => b.trim());
   sel = { bar: 0, idx: 0 };
   scalePick = 0;
   phrase = null;
@@ -911,9 +976,12 @@ function setBars(bars) {
 function init() {
   renderControls();
   renderGrid();
+  loadedBars = state.bars.map((b) => b.trim());
   if (isSong(state.preset)) {
     const p = findPreset(state.preset);
     setScore(p.name, p.parts, (p.offset ?? 0) + state.sec * GRID_MAX);
+    // grille restée vide (fichier sans accords) : on la déduit des notes
+    if (score && !state.bars.some((b) => b.trim())) loadSection(state.sec);
   }
 
   const bind = (id, fn, evt = "change") => $(id).addEventListener(evt, fn);
@@ -929,15 +997,29 @@ function init() {
     updateDerived();
     save();
   });
+  // changer de morceau, de tonalité ou de partie recharge directement la grille
+  shown = { preset: state.preset, key: state.key };
+  const reload = (sec) => {
+    if (!confirmReplace()) {
+      state.preset = shown.preset;
+      state.key = shown.key;
+      $("#preset").value = state.preset;
+      $("#key").value = state.key;
+      return;
+    }
+    shown = { preset: state.preset, key: state.key };
+    state.sec = sec;
+    renderPresetInfo();
+    loadSection(sec);
+    save();
+  };
   bind("#key", (e) => {
     state.key = e.target.value;
-    save();
+    reload(state.sec);
   });
   bind("#preset", (e) => {
     state.preset = e.target.value;
-    state.sec = 0;
-    renderPresetInfo();
-    save();
+    reload(0);
   });
   bind("#acc", (e) => {
     state.acc = e.target.value;
@@ -945,16 +1027,12 @@ function init() {
     updateDerived();
     save();
   });
-  bind("#apply-preset", () => loadSection(state.sec), "click");
   bind("#section", (e) => {
-    const sec = Number(e.target.value);
-    const here = sourceBars().slice(state.sec * GRID_MAX, (state.sec + 1) * GRID_MAX).map((b) => b.trim());
-    const dirty = state.bars.some((b, i) => b.trim() !== (here[i] ?? ""));
-    if (dirty && !window.confirm("Tu as modifié la grille : la remplacer par cette section ?")) {
+    if (!confirmReplace()) {
       e.target.value = String(state.sec);
       return;
     }
-    loadSection(sec);
+    loadSection(Number(e.target.value));
   });
   initSongs();
   bind(
@@ -966,13 +1044,15 @@ function init() {
     },
     "input",
   );
-  for (const k of ["loop", "click", "swing", "drums"]) {
+  for (const k of ["loop", "click", "swing", "drums", "backing"]) {
     bind("#" + k, (e) => {
       state[k] = e.target.checked;
+      renderPlayWhat();
       save();
     });
   }
   bind("#play", () => playGrid(), "click");
+  renderPlayWhat();
 
   bind("#add-bars", () => {
     if (state.bars.length >= GRID_MAX) return;
@@ -1011,18 +1091,19 @@ function init() {
 
   const onScoreChange = (e) => {
     if (!score) return;
-    if (e.target.id === "score-view-part") {
-      score.view = Number(e.target.value);
-      renderScoreView();
-    } else if (e.target.name === "model") {
+    if (e.target.id === "score-view-part" || e.target.name === "model") {
       score.model = Number(e.target.value);
       phrase = null;
+      renderScore();
       select(sel.bar, sel.idx);
+    } else if (e.target.name === "listen") {
+      score.listen[e.target.checked ? "add" : "delete"](Number(e.target.value));
+      renderPlayWhat();
+      if (engine.playing) engine.stop();
     } else if (e.target.id === "score-adapt") score.adapt = e.target.checked;
     else if (e.target.id === "score-echo") score.echo = e.target.checked;
   };
   const onScoreClick = (e) => {
-    if (e.target.id === "play2") return playGrid();
     const hit = e.target.closest("[data-bar]");
     if (hit && score) return select(Number(hit.dataset.bar), 0);
     const page = e.target.closest("[data-page]");
@@ -1043,7 +1124,7 @@ function init() {
       const bars = guessBars(score.parts, n, accPref(), score.offset);
       if (!bars.some(Boolean)) return songStatus("Pas assez de notes pour deviner des accords.", true);
       setBars(bars);
-      songStatus(`Grille déduite des notes : ${bars.filter(Boolean).length} mesures remplies. Vérifie à l'oreille (▶) et corrige ; clique « Enregistrer la grille » pour la garder.`);
+      songStatus(`Grille déduite des notes : ${bars.filter(Boolean).length} mesures remplies. Vérifie à l'oreille (▶ Jouer) et corrige ; clique « Garder ce morceau » pour la conserver.`);
       $("#grid").scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }

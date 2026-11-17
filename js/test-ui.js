@@ -151,7 +151,7 @@ export function initTestUi(ctx) {
         .join("")}</div>`;
     } else {
       input = `<div class="choices pcs">${Array.from({ length: 12 }, (_, pc) => `<button type="button" class="choice" data-pc="${pc}">${esc(noteLabel(pc, style))}</button>`).join("")}</div>
-        <p class="hint">${midi.input ? "Ton clavier est actif : joue la note." : "Clique la note, ou connecte ton clavier MIDI (panneau 4) pour la jouer."}</p>`;
+        <p class="hint">${midi.input ? "Ton clavier est actif : joue la note." : "Clique la note, ou connecte ton clavier MIDI (section « Clavier MIDI ») pour la jouer."}</p>`;
     }
     $("#quiz-box").innerHTML = `
       <p class="q-progress">Question ${quiz.n}/${QUIZ_LENGTH} · ${quiz.score} bonne${quiz.score > 1 ? "s" : ""} réponse${quiz.score > 1 ? "s" : ""}</p>
@@ -214,7 +214,7 @@ export function initTestUi(ctx) {
   function showImprovResult(result) {
     const style = ctx.names();
     if (!result.total) {
-      $("#improv-box").innerHTML = `<p class="fb-bad">Aucune note reçue pendant la grille. Vérifie que ton clavier est bien sélectionné (panneau 4), puis recommence.</p>`;
+      $("#improv-box").innerHTML = `<p class="fb-bad">Aucune note reçue pendant la grille. Vérifie que ton clavier est bien sélectionné (section « Clavier MIDI »), puis recommence.</p>`;
       return;
     }
     const verdict =
@@ -245,7 +245,7 @@ export function initTestUi(ctx) {
       return;
     }
     if (!midi.input) {
-      $("#improv-box").innerHTML = `<p class="fb-bad">Connecte d'abord ton clavier MIDI (panneau 4).</p>`;
+      $("#improv-box").innerHTML = `<p class="fb-bad">Connecte d'abord ton clavier MIDI (section « Clavier MIDI »).</p>`;
       return;
     }
     recorded = [];
@@ -254,6 +254,7 @@ export function initTestUi(ctx) {
     ctx.playGrid({
       loop: false,
       countIn: 4,
+      noScore: true,
       onEnd: () => {
         if (!recording) return;
         recording = false;
